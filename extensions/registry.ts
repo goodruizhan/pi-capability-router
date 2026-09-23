@@ -2,6 +2,7 @@ export interface ToolRecord {
   name: string;
   description: string;
   parameters: unknown;
+  sourceInfo?: { path?: string; source?: string };
 }
 
 export interface CapabilityDescriptor {

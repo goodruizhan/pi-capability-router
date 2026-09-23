@@ -1,0 +1,16 @@
+{
+  "environment": "Pi RPC, --no-session --offline, normal installed extensions, router loaded explicitly",
+  "measurement": "schema JSON character estimates reported by /capability stats",
+  "startupRegisteredToolCount": 38,
+  "startupRegisteredToolSchemaChars": 65759,
+  "startupActiveToolCount": 5,
+  "startupToolSchemaChars": 3649,
+  "estimatedAvoidedStartupChars": 62110,
+  "estimatedAvoidedStartupPercent": 94.45,
+  "laterRegisteredToolCount": 96,
+  "laterRegisteredToolSchemaChars": 172856,
+  "indexedSkillsAtCommand": 34,
+  "indexedMcpToolsAtCommand": 2,
+  "indexedMemoryRetrievalToolsAtCommand": 2,
+  "note": "Safe Skills/Context mode. Strict catalog savings and provider token usage were not measured in this RPC smoke test."
+}

@@ -1,7 +1,15 @@
 import type { CapabilityDescriptor } from "./registry.ts";
 
-export interface SearchHit {
-  capability: CapabilityDescriptor;
+export interface SearchableCapability {
+  id: string;
+  type: "tool" | "skill" | "mcp" | "memory" | "context";
+  name: string;
+  description: string;
+  keywords?: string[];
+}
+
+export interface SearchHit<T extends SearchableCapability = SearchableCapability> {
+  capability: T;
   score: number;
 }
 
@@ -9,22 +17,22 @@ function terms(value: string): string[] {
   return value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
-export function searchTools(
-  capabilities: CapabilityDescriptor[],
+export function searchCapabilities<T extends SearchableCapability>(
+  capabilities: T[],
   query: string,
   active: ReadonlySet<string>,
   limit: number,
-): SearchHit[] {
+): SearchHit<T>[] {
   const normalized = query.trim().toLowerCase();
   const queryTerms = [...new Set(terms(normalized))];
   if (!queryTerms.length) return [];
 
   return capabilities
-    .filter((capability) => !active.has(capability.name))
+    .filter((capability) => !active.has(capability.id))
     .map((capability) => {
       const name = capability.name.toLowerCase();
       const nameTerms = terms(name);
-      const description = capability.description.toLowerCase();
+      const description = `${capability.description} ${(capability.keywords ?? []).join(" ")}`.toLowerCase();
       const matched = queryTerms.filter((term) => nameTerms.includes(term) || description.includes(term));
       let score = 0;
       if (name === normalized) score = 1;
@@ -40,4 +48,13 @@ export function searchTools(
     .filter((hit) => hit.score >= 0.25)
     .sort((a, b) => b.score - a.score || a.capability.name.localeCompare(b.capability.name))
     .slice(0, limit);
+}
+
+export function searchTools(
+  capabilities: CapabilityDescriptor[],
+  query: string,
+  active: ReadonlySet<string>,
+  limit: number,
+): SearchHit<CapabilityDescriptor>[] {
+  return searchCapabilities(capabilities, query, new Set([...active].map((name) => `tool:${name}`)), limit);
 }

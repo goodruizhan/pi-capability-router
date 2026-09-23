@@ -1,52 +1,62 @@
 # pi-capability-router
 
-Pi 的按需工具发现插件。V0.1 在启动时只保留 `read`、`bash`、`edit`、`write` 和 `capability`。其他已注册工具仍由 Pi 管理，但默认不进入模型工具列表。模型需要额外工具时，先搜索，再加载最少的工具。
+Pi 的按需能力路由扩展。默认只让核心工具和一个 `capability` 入口进入模型工具列表；模型可搜索并加载已注册工具、Skills、MCP、Memory 检索工具及项目文档。
 
-## 当前阶段
+## 里程碑
 
-本版本实现架构计划中的 **V0.1 Tool Lazy Router**。Skills、MCP、Memory、Context 的统一索引属于后续阶段；本版本不会改变 Pi 对这些资源的默认处理。搜索索引只保存在插件内存中，`capability` 的描述不包含工具目录。
+| 里程碑 | 实现 | 说明 |
+| --- | --- | --- |
+| V0.1 Tools | 已完成 | 非核心工具默认隐藏，按需激活，会话内累加 |
+| Skills | 已完成 | 从 Pi 已发现的 Skill 元数据建索引，按需读取单个 `SKILL.md`；可选严格模式隐藏目录 |
+| MCP | 已完成 | 发现并激活 `pi-mcp-adapter` 代理或直连工具，由 Adapter 管理连接、搜索和认证 |
+| Memory | 已完成 | 发现并激活现有检索工具，限制结果数和返回字符数 |
+| Context | 已完成 | 搜索项目文档和 Pi Context Files，按相关段落限量加载；可选严格模式 |
 
-## 安装
+各里程碑的验收与限制见 [Skills](docs/milestone-skills.md)、[MCP](docs/milestone-mcp.md)、[Memory](docs/milestone-memory.md)、[Context](docs/milestone-context.md)。V0.1 的源码分析见 [架构与验收](docs/v0.1-architecture-and-acceptance.md)。
 
-将本项目路径作为 Pi 扩展加载，或在 Pi 配置中加入项目路径。原 `pi-tool-search` 扩展应从同一 Pi 会话的扩展列表中移除，避免两个扩展同时设置 active tools。
+## 安装和使用
+
+将本项目作为 Pi 扩展加载。不要在同一会话中同时加载原 `pi-tool-search`，以免两个扩展同时修改 active tools。
 
 ```powershell
 pi -e D:\Project\AI插件\Pi插件\pi-capability-router\extensions\index.ts
 ```
 
-## 使用
-
 ```text
-capability({"action":"search","query":"desktop GUI click screenshot"})
-capability({"action":"load","names":["computer_use_click"]})
+capability({"action":"search","query":"UE5 patrol behavior tree","types":["skill"]})
+capability({"action":"load","names":["skill:ue5-patrol"]})
+
+capability({"action":"search","query":"GitHub repository issues","types":["mcp"]})
+capability({"action":"load","names":["mcp:mcp"]})
 ```
 
-`load` 后在**下一次模型请求**中使用新工具。Pi 的当前模型请求已经固定工具 schema，因此不要把 `load` 和新工具调用放在同一条模型回复里。已加载工具在本会话中保持启用，新会话重新回到初始工具集。
-
-`capability({"action":"status"})` 查看当前启用工具。用户可使用 `/capability status`、`/capability stats`、`/capability search <query>`。`stats` 报告当前 Pi 注册工具的 schema JSON 字符估算；该数值是本机实测估算，不等同于 provider 最终 token 计费。
+搜索结果返回带类型的 ID；加载时使用该 ID。工具、MCP 和 Memory 检索工具在**下一次模型请求**可见；Skill 和 Context 正文由 `capability.load` 作为有限长度的工具结果返回。用户可运行 `/capability status`、`/capability stats`、`/capability search <query>`。
 
 ## 配置
 
-在 Pi 的 `settings.json` 中可选配置：
+在 Pi 的 `settings.json` 中使用 `capabilityRouter`：
 
 ```json
 {
   "capabilityRouter": {
     "bootstrapTools": ["read", "bash", "edit", "write"],
     "showFooterStatus": true,
-    "search": { "limit": 8 }
+    "search": { "limit": 8 },
+    "skills": { "mode": "safe", "maxChars": 8000 },
+    "providers": { "mcp": true, "memory": true, "context": true },
+    "memory": { "maxResults": 5, "maxCharsPerResult": 2000, "maxTotalChars": 6000 },
+    "context": { "strictMode": false, "maxInjectedChars": 8000, "maxFiles": 200, "paths": [] }
   }
 }
 ```
 
-旧版 `toolSearch.alwaysEnabled` 仍会加入初始工具列表，旧版 footer 隐藏选项仍生效。`bootstrapTools` 可用于保留更多常用工具，但会增加初始 schema 大小。
+`skills.mode: "safe"` 和 `context.strictMode: false` 保留 Pi 原有提示内容。严格模式分别移除 Pi 的 Skill 目录或 Context Files 初始提示，并由 Router 按需加载。已有 `toolSearch.alwaysEnabled` 与 footer 设置仍兼容。MCP Adapter 和 Memory 插件须分别安装，Router 不会自动安装或启动它们。
 
 ## 验证
 
 ```powershell
 npm test
+npm run benchmark
 ```
 
-测试覆盖工具索引、搜索排序、默认隐藏、重复加载和新会话重置。真实 Pi 环境的验收步骤见 [V0.1 架构与验收](docs/v0.1-architecture-and-acceptance.md)。
-
-`npm run benchmark` 会读取 `benchmark/before.json` 和 `benchmark/after.json` 并输出差值。当前样本来自同一完整扩展环境的启动快照：“全部已注册工具均启用”对照与 Router 实际启用状态。命令也接受两个 JSON 文件路径作为参数。
+`/capability stats` 在当前 Pi 环境中报告工具 schema 字符估算、Skill 目录大小和按需加载统计。基准文件记录的是 schema JSON 字符估算，不等同于模型提供商的实际 token 计费。

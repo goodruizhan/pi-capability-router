@@ -1,5 +1,13 @@
 # Changelog
 
+## pi-capability-router 0.2.0 - 2026-09-23
+
+- Skills milestone: index Pi-discovered Skills and load one SKILL.md at a time; add opt-in strict catalog hiding.
+- MCP milestone: route pi-mcp-adapter proxy and direct tools through capability search/load.
+- Memory milestone: route existing retrieval tools with result-count and output-size limits.
+- Context milestone: index allowed project documents and load relevant bounded excerpts; add opt-in strict Context Files hiding.
+- Add separate milestone documentation, integration tests, and live Pi discovery checks.
+
 ## pi-capability-router 0.1.0 - 2026-09-23
 
 - Replaced the manifest-heavy `tool_search` entry with a compact `capability` search/load/status tool.

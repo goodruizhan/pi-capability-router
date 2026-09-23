@@ -1,7 +1,7 @@
 {
   "name": "pi-capability-router",
-  "version": "0.1.0",
-  "description": "Lazy tool discovery and activation for Pi through one capability entry point",
+  "version": "0.2.0",
+  "description": "Lazy discovery and activation of Pi tools, skills, MCP, memory and context",
   "author": "Tuan Son <tuansondinh96@gmail.com>",
   "keywords": [
     "pi",
@@ -33,7 +33,9 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    "benchmark/"
+    "benchmark/",
+    "scripts/",
+    "tests/"
   ],
   "pi": {
     "extensions": [
