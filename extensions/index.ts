@@ -1,193 +1,157 @@
-/**
- * pi-tool-search — hide all tools behind a manifest-aware tool_search.
- *
- * The LLM sees a single tool whose description embeds a compact name+one-liner
- * manifest of every available tool. It calls tool_search with the names it
- * needs; those tools become active for the rest of the session.
- *
- * Design:
- *  - session_start       → snapshot all tools, seed unlocked set with core tools
- *  - turn_start          → rebuild manifest before every LLM call, re-register tool_search, setActiveTools
- *  - tool_search.execute → validate names, add to unlocked set, call setActiveTools, queue hidden retry hint
- *
- * User config (settings.json):
- *  "toolSearch": { "alwaysEnabled": ["lsp", "grep"], "showToolSearchFooterStatus": true }
- *  Set "showToolSearchFooterStatus": false to hide the tool-search footer status line.
- */
-
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { readFileSync } from "fs";
-import { join } from "path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { CapabilityRegistry, schemaChars } from "./registry.ts";
+import { searchTools } from "./search.ts";
+import { CapabilitySession } from "./session.ts";
 
-const CORE_TOOLS = ["read", "write", "edit", "bash", "grep", "find"];
+const DEFAULT_BOOTSTRAP = ["read", "bash", "edit", "write"];
+const DESCRIPTION = "Search hidden tools by task, load only the tool names needed, or inspect active tools. Search before loading. Loaded tools become available on the next model request; call capability alone when loading.";
+const PROMPT_SNIPPET = "If current tools are insufficient, use capability to search and load the minimum needed tools. Call capability load alone, then use the loaded tools in the next response.";
 
-interface UserConfig {
-  alwaysEnabled: string[];
-  showToolSearchFooterStatus: boolean;
+interface RouterConfig {
+  bootstrapTools: string[];
+  showFooterStatus: boolean;
+  searchLimit: number;
 }
 
-function readUserConfig(): UserConfig {
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function readConfig(): RouterConfig {
   try {
-    const raw = readFileSync(join(getAgentDir(), "settings.json"), "utf-8");
-    const s = JSON.parse(raw)?.toolSearch ?? {};
+    const settings = JSON.parse(readFileSync(join(getAgentDir(), "settings.json"), "utf8"));
+    const legacy = settings?.toolSearch ?? {};
+    const router = settings?.capabilityRouter ?? {};
+    const limit = router?.search?.limit;
     return {
-      alwaysEnabled: Array.isArray(s.alwaysEnabled)
-        ? s.alwaysEnabled.filter((n: unknown): n is string => typeof n === "string")
-        : [],
-      showToolSearchFooterStatus: s.showToolSearchFooterStatus !== false && s.showFooterStatus !== false && s.showStatus !== false,
+      bootstrapTools: [
+        ...new Set([
+          ...(Array.isArray(router.bootstrapTools) ? stringArray(router.bootstrapTools) : DEFAULT_BOOTSTRAP),
+          ...stringArray(legacy.alwaysEnabled),
+        ]),
+      ],
+      showFooterStatus: router.showFooterStatus !== false && legacy.showToolSearchFooterStatus !== false && legacy.showFooterStatus !== false && legacy.showStatus !== false,
+      searchLimit: Number.isInteger(limit) ? Math.max(1, Math.min(limit, 20)) : 8,
     };
-  } catch {}
-  return { alwaysEnabled: [], showToolSearchFooterStatus: true };
+  } catch {
+    return { bootstrapTools: DEFAULT_BOOTSTRAP, showFooterStatus: true, searchLimit: 8 };
+  }
 }
 
-export default function toolSearchExtension(pi: ExtensionAPI) {
-  // Compact snapshot: name + first-sentence description (≤80 chars)
-  let manifest: { name: string; blurb: string }[] = [];
+export default function capabilityRouter(pi: ExtensionAPI) {
+  const registry = new CapabilityRegistry();
+  const session = new CapabilitySession();
+  let config = readConfig();
 
-  // Names enabled so far this session (persists across turns)
-  const unlocked = new Set<string>();
-
-  let showToolSearchFooterStatus = true;
-
-  // ── helpers ────────────────────────────────────────────────────────────────
-
-  function buildManifest() {
-    manifest = pi.getAllTools()
-      .filter(t => t.name !== "tool_search")
-      .map(t => ({
-        name: t.name,
-        blurb: (t.description ?? "").split(/[.\n]/)[0].trim().slice(0, 80),
-      }));
+  function refreshRegistry() {
+    registry.refresh(pi.getAllTools());
   }
 
-  function buildDescription(): string {
-    const active = manifest.filter(t => unlocked.has(t.name));
-    const hidden = manifest.filter(t => !unlocked.has(t.name));
-
-    const activeLines = active
-      .map(t => `  ${t.name}: ${t.blurb}`)
-      .join("\n");
-    const hiddenLines = hidden
-      .map(t => `  ${t.name}: ${t.blurb}`)
-      .join("\n");
-
-    const parts: string[] = [];
-
-    parts.push(`Enable tools by name before calling them. All tools below are hidden until you enable them here.
-
-IMPORTANT: After calling tool_search, STOP and wait for the result. Do NOT call any newly-enabled tool in the same response as tool_search — the tool schema is fixed for the current response, so the call will fail with "Tool not found". Call tool_search alone, then invoke the unlocked tools in your next response.`);
-
-    if (active.length) {
-      parts.push(`Already active (do NOT call tool_search for these):\n${activeLines}`);
-    }
-
-    if (hidden.length) {
-      parts.push(`Available tools (hidden — enable via tool_search):\n${hiddenLines}`);
-    }
-
-    parts.push(`Pass one or more exact tool names. After enabling, call those tools directly in a SUBSEQUENT response (not the same one as tool_search).`);
-
-    return parts.join("\n\n");
-  }
-
-  function refreshActiveTools(ctx?: { ui: { setStatus(id: string, content: string | undefined): void } }) {
-    showToolSearchFooterStatus = readUserConfig().showToolSearchFooterStatus;
-
-    buildManifest();
-    registerToolSearch();
-    pi.setActiveTools(["tool_search", ...unlocked]);
-
-    if (!ctx) return;
-
-    if (showToolSearchFooterStatus) {
-      ctx.ui.setStatus("tool-search", `${unlocked.size} / ${manifest.length + 1} tools`);
-    } else {
-      ctx.ui.setStatus("tool-search", undefined);
+  function applyActiveTools(ctx?: { ui: { setStatus(id: string, content: string | undefined): void } }) {
+    refreshRegistry();
+    const known = new Set(registry.list().map((capability) => capability.name));
+    const active = [...session.active].filter((name) => known.has(name));
+    pi.setActiveTools(["capability", ...active]);
+    if (ctx) {
+      ctx.ui.setStatus(
+        "capability-router",
+        config.showFooterStatus ? `${active.length + 1} / ${known.size + 1} tools` : undefined,
+      );
     }
   }
 
-  function registerToolSearch() {
-    pi.registerTool({
-      name: "tool_search",
-      label: "Tool Search",
-      description: buildDescription(),
-      promptSnippet: "Enable hidden tools by name. Call tool_search ALONE, then use unlocked tools in next turn. If same-response call fails, retry next turn.",
-      parameters: Type.Object({
-        names: Type.Array(Type.String(), {
-          description:
-            "Exact tool names to enable (from the list in this tool's description)",
-        }),
-      }),
-      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-        const allNames = new Set(manifest.map(t => t.name));
-        const valid: string[] = [];
-        const invalid: string[] = [];
-        const already: string[] = [];
-
-        for (const n of params.names) {
-          if (!allNames.has(n)) {
-            invalid.push(n);
-          } else if (unlocked.has(n)) {
-            already.push(n);
-          } else {
-            valid.push(n);
-          }
-        }
-
-        valid.forEach(n => unlocked.add(n));
-        refreshActiveTools();
-
-        if (valid.length) {
-          pi.sendMessage({
-            customType: "tool-search-hint",
-            content:
-              `tool_search update: ${valid.join(", ")} now active. Continue original task in next turn only if work still unfinished. Do not repeat any tool call that already succeeded. Retry only tool calls that explicitly failed because tool was inactive or not found earlier.`,
-            display: false,
-            details: { enabled: valid },
-          }, {
-            deliverAs: ctx.isIdle() ? "followUp" : "steer",
-            triggerTurn: true,
-          });
-        }
-
-        const parts: string[] = [];
-        if (valid.length) {
-          parts.push(`Enabled: ${valid.join(", ")}`);
-        }
-        if (already.length) parts.push(`Already active: ${already.join(", ")}`);
-        if (invalid.length) parts.push(`Unknown (ignored): ${invalid.join(", ")}`);
-
-        return {
-          content: [{ type: "text", text: parts.join("\n") || "Nothing changed." }],
-          details: { enabled: valid, alreadyActive: already, unknown: invalid, active: [...unlocked] },
-        };
-      },
-    });
+  function routerSchemaChars(): number {
+    const router = pi.getAllTools().find((tool) => tool.name === "capability");
+    return router ? schemaChars(router) : 0;
   }
 
-  // ── lifecycle ──────────────────────────────────────────────────────────────
+  function statsText(): string {
+    const stats = session.stats(registry.list(), routerSchemaChars());
+    return [
+      "Capability Router Stats (schema JSON character estimates)",
+      `Startup: ${stats.startupActiveToolCount} active tools / ${stats.startupToolSchemaChars} schema chars`,
+      `Registered at startup: ${stats.startupRegisteredToolCount} tools / ${stats.startupRegisteredToolSchemaChars} schema chars`,
+      `Current registered: ${stats.registeredToolCount} tools / ${stats.registeredToolSchemaChars} schema chars`,
+      `Estimated avoided at startup: ${stats.estimatedAvoidedStartupChars} chars`,
+      `Session: ${stats.activeToolCount} active tools / ${stats.activeToolSchemaChars} schema chars / ${stats.activationCount} loads`,
+    ].join("\n");
+  }
+
+  pi.registerTool({
+    name: "capability",
+    label: "Capability",
+    description: DESCRIPTION,
+    promptSnippet: PROMPT_SNIPPET,
+    parameters: Type.Object({
+      action: Type.Union([Type.Literal("search"), Type.Literal("load"), Type.Literal("status")]),
+      query: Type.Optional(Type.String({ description: "Task or tool to search for" })),
+      names: Type.Optional(Type.Array(Type.String(), { description: "Exact tool names returned by search" })),
+      types: Type.Optional(Type.Array(Type.Literal("tool"), { description: "V0.1 supports tools only" })),
+      limit: Type.Optional(Type.Number({ description: "Maximum search results (1-20)" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      refreshRegistry();
+      if (params.action === "status") {
+        return { content: [{ type: "text", text: `Active tools: ${["capability", ...session.active].join(", ")}\n${statsText()}` }] };
+      }
+      if (params.action === "search") {
+        const query = params.query?.trim();
+        if (!query) return { content: [{ type: "text", text: "Provide a nonempty query for search." }] };
+        const limit = params.limit === undefined ? config.searchLimit : Math.max(1, Math.min(Math.trunc(params.limit) || 1, 20));
+        const hits = searchTools(registry.list(), query, session.active, limit);
+        const resultText = hits.length
+          ? hits.map((hit, index) => `${index + 1}. ${hit.capability.name} [tool] score=${hit.score.toFixed(2)}\n   ${hit.capability.description.replace(/\s+/g, " ").slice(0, 160)}`).join("\n")
+          : `No matching hidden tools for "${query}". Try broader wording or continue with current tools.`;
+        return { content: [{ type: "text", text: resultText }] };
+      }
+      const names = params.names ?? [];
+      if (!names.length) return { content: [{ type: "text", text: "Provide exact tool names from search for load." }] };
+      const result = session.load(names, registry.list());
+      if (result.enabled.length) {
+        applyActiveTools();
+        pi.sendMessage({
+          customType: "capability-load-hint",
+          content: `Capability load complete: ${result.enabled.join(", ")} active. Continue the original task on the next model request. Retry only tool calls that failed because a tool was inactive.`,
+          display: false,
+          details: { enabled: result.enabled },
+        }, { deliverAs: ctx.isIdle() ? "followUp" : "steer", triggerTurn: true });
+      }
+      const lines = [
+        result.enabled.length ? `Loaded: ${result.enabled.join(", ")}. Available on the next model request.` : "No new tools loaded.",
+        result.already.length ? `Already active: ${result.already.join(", ")}` : "",
+        result.unknown.length ? `Unknown: ${result.unknown.join(", ")}` : "",
+      ].filter(Boolean);
+      return { content: [{ type: "text", text: lines.join("\n") }], details: result };
+    },
+  });
+
+  pi.registerCommand("capability", {
+    description: "Inspect capability router: status, stats, or search <query>",
+    async handler(args, ctx) {
+      refreshRegistry();
+      const [action, ...rest] = args.trim().split(/\s+/);
+      if (action === "stats") ctx.ui.notify(statsText(), "info");
+      else if (action === "search" && rest.length) {
+        const hits = searchTools(registry.list(), rest.join(" "), session.active, config.searchLimit);
+        ctx.ui.notify(hits.length ? hits.map((hit) => `${hit.capability.name} (${hit.score.toFixed(2)})`).join("\n") : "No matching hidden tools.", "info");
+      } else if (!action || action === "status") {
+        ctx.ui.notify(`Active: ${["capability", ...session.active].join(", ")}\n${statsText()}`, "info");
+      } else ctx.ui.notify("Usage: /capability status | stats | search <query>", "warning");
+    },
+  });
 
   pi.on("session_start", (_event, ctx) => {
-    unlocked.clear();
-
-    const config = readUserConfig();
-    showToolSearchFooterStatus = config.showToolSearchFooterStatus;
-    for (const name of [...CORE_TOOLS, ...config.alwaysEnabled]) unlocked.add(name);
-
-    refreshActiveTools(ctx);
-
-    ctx.ui.notify(
-      `pi-tool-search: ${manifest.length} tools hidden behind tool_search`,
-      "info",
-    );
+    config = readConfig();
+    refreshRegistry();
+    session.reset(config.bootstrapTools, registry.list(), routerSchemaChars());
+    applyActiveTools(ctx);
   });
 
   pi.on("turn_start", (_event, ctx) => {
-    // Re-snapshot before every LLM call, not only fresh user prompts.
-    // This keeps unlocked tools active for agent-loop continuations too.
-    refreshActiveTools(ctx);
+    applyActiveTools(ctx);
   });
-
 }

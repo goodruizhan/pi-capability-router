@@ -1,0 +1,11 @@
+{
+  "environment": "Pi RPC, --no-session --offline --no-extensions, router loaded explicitly",
+  "measurement": "schema JSON characters reported by /capability stats",
+  "allRegisteredToolCount": 9,
+  "allRegisteredToolSchemaChars": 6053,
+  "startupActiveToolCount": 5,
+  "startupToolSchemaChars": 3495,
+  "estimatedAvoidedStartupChars": 2558,
+  "estimatedAvoidedStartupPercent": 42.26,
+  "note": "This isolated smoke session includes only Pi built-in tools and the router. It does not represent the user's full extension set or provider token usage."
+}

@@ -1,80 +1,52 @@
-# pi-tool-search
+# pi-capability-router
 
-Hide non-core tools behind a manifest-aware `tool_search` gate. Core tools stay enabled by default; everything else can be unlocked on demand. Purpose: reduce prompt context / token usage by avoiding full tool schemas for rarely used tools.
+Pi 的按需工具发现插件。V0.1 在启动时只保留 `read`、`bash`、`edit`、`write` 和 `capability`。其他已注册工具仍由 Pi 管理，但默认不进入模型工具列表。模型需要额外工具时，先搜索，再加载最少的工具。
 
-## Why
+## 当前阶段
 
-Full tool schemas are expensive (~500 bytes each). With 50 tools that's ~25KB of schema noise every turn. Purpose of this extension is to reduce prompt context / token usage: keep core tools active, replace rest with compact manifest in `tool_search`, and only load full schemas when explicitly unlocked.
+本版本实现架构计划中的 **V0.1 Tool Lazy Router**。Skills、MCP、Memory、Context 的统一索引属于后续阶段；本版本不会改变 Pi 对这些资源的默认处理。搜索索引只保存在插件内存中，`capability` 的描述不包含工具目录。
 
-## How it works
+## 安装
 
-- **`session_start`** — snapshots all tools into compact manifest, seeds `unlocked` set with core tools enabled by default (`read`, `write`, `edit`, `bash`, `grep`, `find`)
-- **`turn_start`** — rebuilds manifest before every LLM call, re-registers `tool_search` with fresh description, re-applies active tools for agent-loop continuations too
-- **`tool_search.execute`** — validates names, adds to `unlocked` set, persists across turns, queues hidden steer hint so agent can continue without waiting for another user message
+将本项目路径作为 Pi 扩展加载，或在 Pi 配置中加入项目路径。原 `pi-tool-search` 扩展应从同一 Pi 会话的扩展列表中移除，避免两个扩展同时设置 active tools。
 
-## What the LLM sees
-
-Pi's system prompt includes a lightweight tool index — names and one-liners for every registered tool. This is intentional: the LLM needs to know what tools exist so it can make targeted `tool_search` requests rather than guessing. The index costs ~4KB regardless of tool count; full schemas are never sent until unlocked.
-
-The `tool_search` description itself carries the same manifest, reinforcing which tools are available and how to unlock them:
-
-```
-Enable tools by name before calling them. All tools below are hidden until you enable them here.
-
-Available tools:
-  read: Read file contents with optional offset/limit
-  write: Write content to a file
-  bash: Execute a shell command
-  grep: Search files with ripgrep
-  ...
-
-Pass one or more exact tool names. After enabling, call those tools directly in next turn.
+```powershell
+pi -e D:\Project\AI插件\Pi插件\pi-capability-router\extensions\index.ts
 ```
 
-## Install
+## 使用
 
-```bash
-pi install npm:pi-tool-search
+```text
+capability({"action":"search","query":"desktop GUI click screenshot"})
+capability({"action":"load","names":["computer_use_click"]})
 ```
 
-Or configure manually in `settings.json`:
+`load` 后在**下一次模型请求**中使用新工具。Pi 的当前模型请求已经固定工具 schema，因此不要把 `load` 和新工具调用放在同一条模型回复里。已加载工具在本会话中保持启用，新会话重新回到初始工具集。
+
+`capability({"action":"status"})` 查看当前启用工具。用户可使用 `/capability status`、`/capability stats`、`/capability search <query>`。`stats` 报告当前 Pi 注册工具的 schema JSON 字符估算；该数值是本机实测估算，不等同于 provider 最终 token 计费。
+
+## 配置
+
+在 Pi 的 `settings.json` 中可选配置：
 
 ```json
 {
-  "extensions": ["/path/to/pi-tool-search"]
-}
-```
-
-## Usage
-
-Once installed, all tools except core defaults (`read`, `write`, `edit`, `bash`, `grep`, `find`) are hidden behind `tool_search`. Call `tool_search` with tool names to unlock them on demand.
-
-## Configuration
-
-Add a `toolSearch` block to `settings.json`:
-
-```json
-{
-  "toolSearch": {
-    "alwaysEnabled": ["lsp", "grep", "find"],
-    "showToolSearchFooterStatus": true
+  "capabilityRouter": {
+    "bootstrapTools": ["read", "bash", "edit", "write"],
+    "showFooterStatus": true,
+    "search": { "limit": 8 }
   }
 }
 ```
 
-| Key | Default | Description |
-|---|---|---|
-| `alwaysEnabled` | `[]` | Tool names to pre-unlock beyond default core tools (`read`, `write`, `edit`, `bash`, `grep`, `find`) |
-| `showToolSearchFooterStatus` | `true` | Show tool-search `N / total tools` in the footer status bar |
+旧版 `toolSearch.alwaysEnabled` 仍会加入初始工具列表，旧版 footer 隐藏选项仍生效。`bootstrapTools` 可用于保留更多常用工具，但会增加初始 schema 大小。
 
-Unknown names in `alwaysEnabled` are silently ignored until they appear in manifest. `alwaysEnabled` is read at each `session_start`, so changes take effect on next session without reinstall. `showToolSearchFooterStatus` is re-read on refresh; set it to `false` to clear/hide the tool-search footer status.
+## 验证
 
-## Same-response activation caveat
+```powershell
+npm test
+```
 
-If model emits `tool_search(...)` and newly enabled tool in same assistant response, second call can still fail because provider already received old tool schema for that response. Extension now mitigates this by:
+测试覆盖工具索引、搜索排序、默认隐藏、重复加载和新会话重置。真实 Pi 环境的验收步骤见 [V0.1 架构与验收](docs/v0.1-architecture-and-acceptance.md)。
 
-- telling model to call `tool_search` alone
-- re-applying active tools on every `turn_start`
-- queueing hidden steer hint after successful enable so agent can retry in next turn without waiting for another user message
-
-Result: failure no longer needs fresh user message to recover. Retry can happen in immediate next agent turn.
+`npm run benchmark` 会读取 `benchmark/before.json` 和 `benchmark/after.json` 并输出差值。当前样本来自同一完整扩展环境的启动快照：“全部已注册工具均启用”对照与 Router 实际启用状态。命令也接受两个 JSON 文件路径作为参数。

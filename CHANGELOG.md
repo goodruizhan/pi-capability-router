@@ -1,5 +1,12 @@
 # Changelog
 
+## pi-capability-router 0.1.0 - 2026-09-23
+
+- Replaced the manifest-heavy `tool_search` entry with a compact `capability` search/load/status tool.
+- Added a local tool registry, lexical ranking, additive session activation, and live schema character statistics.
+- Preserved the next-request activation hint and legacy `toolSearch` bootstrap settings.
+- Added unit and lifecycle tests plus an isolated Pi RPC benchmark snapshot.
+
 ## [0.3.6] - 2026-04-24
 
 ### Bug Fixes

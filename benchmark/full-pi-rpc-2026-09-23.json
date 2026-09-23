@@ -1,0 +1,13 @@
+{
+  "environment": "Pi RPC, --no-session --offline, normal installed extensions, router loaded explicitly",
+  "measurement": "schema JSON characters reported by /capability stats",
+  "startupRegisteredToolCount": 38,
+  "startupRegisteredToolSchemaChars": 65605,
+  "startupActiveToolCount": 5,
+  "startupToolSchemaChars": 3495,
+  "estimatedAvoidedStartupChars": 62110,
+  "estimatedAvoidedStartupPercent": 94.67,
+  "laterRegisteredToolCount": 96,
+  "laterRegisteredToolSchemaChars": 172702,
+  "note": "Late tool registration is reported separately. Figures are schema JSON character estimates, not final provider token usage."
+}
