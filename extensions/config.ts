@@ -23,11 +23,22 @@ function boundedNumber(value: unknown, fallback: number, min: number, max: numbe
     : fallback;
 }
 
-export function readConfig(agentDir: string): RouterConfig {
+export function readConfig(agentDir: string, warn: (message: string) => void = () => {}): RouterConfig {
   let settings: any = {};
+  const path = join(agentDir, "settings.json");
   try {
-    settings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
-  } catch {}
+    settings = JSON.parse(readFileSync(path, "utf8"));
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      warn(`Invalid settings object in ${path}; using router defaults.`);
+      settings = {};
+    } else if (settings.capabilityRouter !== undefined &&
+      (!settings.capabilityRouter || typeof settings.capabilityRouter !== "object" || Array.isArray(settings.capabilityRouter))) {
+      warn(`Invalid capabilityRouter configuration in ${path}; using router defaults.`);
+    }
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT")
+      warn(`Cannot read router settings in ${path}: ${error instanceof Error ? error.message : String(error)}; using defaults.`);
+  }
   const legacy = settings?.toolSearch ?? {};
   const router = settings?.capabilityRouter ?? {};
   const providers = router.providers ?? {};

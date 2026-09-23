@@ -68,6 +68,19 @@ test("Context milestone: project docs are indexed and relevant chunks load withi
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("explicit paths index non-docs project directories only after discovery", () => {
+  const dir = mkdtempSync(join(tmpdir(), "router-workspace-"));
+  try {
+    mkdirSync(join(dir, "待解决"));
+    writeFileSync(join(dir, "待解决", "问题清单.md"), "# 搜索问题\n\nTool routing notes.");
+    const provider = new ContextProvider();
+    assert.equal(provider.list().length, 0);
+    provider.discover(dir, [], ["待解决"], 20);
+    assert.equal(provider.list().length, 1);
+    assert.equal(provider.search("routing notes", 5)[0]?.capability.name, "问题清单.md");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("Config milestones default to safe Pi behavior and clamp limits", () => {
   const dir = mkdtempSync(join(tmpdir(), "router-config-"));
   try {
@@ -83,5 +96,9 @@ test("Config milestones default to safe Pi behavior and clamp limits", () => {
     assert.equal(config.skills.maxChars, 20000);
     assert.equal(config.context.maxInjectedChars, 500);
     assert.equal(config.memory.maxResults, 20);
+    const warnings = [];
+    writeFileSync(join(dir, "settings.json"), "{broken json");
+    assert.equal(readConfig(dir, (warning) => warnings.push(warning)).skills.mode, "safe");
+    assert.match(warnings[0], /Cannot read router settings/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

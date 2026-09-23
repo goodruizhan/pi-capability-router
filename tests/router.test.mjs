@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CapabilityRegistry } from "../extensions/registry.ts";
-import { searchTools } from "../extensions/search.ts";
+import { searchCapabilities, searchTools } from "../extensions/search.ts";
 import { CapabilitySession } from "../extensions/session.ts";
 
 const tools = [
@@ -30,6 +30,21 @@ test("search ranks exact names and task descriptions, hiding active tools", () =
   assert.equal(searchTools(registry.list(), "desktop GUI click", active, 8)[0]?.capability.name, "computer_use_click");
   assert.deepEqual(searchTools(registry.list(), "read", active, 8), []);
   assert.equal(searchTools(registry.list(), "", active, 8).length, 0);
+});
+
+test("lexical ranking distinguishes substring quality and filters incomplete multiword hits", () => {
+  const items = [
+    { id: "tool:browser", type: "tool", name: "browser", description: "Browse pages" },
+    { id: "tool:browser_click", type: "tool", name: "browser_click", description: "Click a tab" },
+    { id: "tool:computer_use_browser_click", type: "tool", name: "computer_use_browser_click", description: "Click a tab" },
+    { id: "skill:ue5-module-router", type: "skill", name: "ue5-module-router", description: "Route UE5 modules" },
+  ];
+  const hits = searchCapabilities(items, "browser", new Set(), 8);
+  assert.deepEqual(hits.map((hit) => hit.capability.name), ["browser", "browser_click", "computer_use_browser_click"]);
+  assert.ok(hits[1].score > hits[2].score);
+  assert.deepEqual(searchCapabilities(items, "capability router", new Set(), 8), []);
+  assert.deepEqual(searchCapabilities(items, "browser click tab", new Set(), 8).map((hit) => hit.capability.name),
+    ["browser_click", "computer_use_browser_click"]);
 });
 
 test("load is additive and idempotent; a new session resets it", () => {

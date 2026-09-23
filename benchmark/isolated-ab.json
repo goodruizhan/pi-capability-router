@@ -1,0 +1,38 @@
+{
+  "prompt": "Reply with exactly one line: OK",
+  "model": "sensenova/sensenova-6.8-flash-lite",
+  "withoutRouter": {
+    "input": 4887,
+    "output": 6,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "reasoning": 2,
+    "totalTokens": 4893,
+    "cost": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "total": 0
+    }
+  },
+  "withRouter": {
+    "input": 5290,
+    "output": 16,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "reasoning": 12,
+    "totalTokens": 5306,
+    "cost": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "total": 0
+    }
+  },
+  "promptTokensWithoutRouter": 4887,
+  "promptTokensWithRouter": 5290,
+  "promptTokenDelta": 403,
+  "note": "Input + cacheRead + cacheWrite compares prompt tokens even with cache hits. Fixed overhead in an isolated environment; NOT billed cost or full-environment token savings."
+}

@@ -32,22 +32,27 @@ export function searchCapabilities<T extends SearchableCapability>(
     .map((capability) => {
       const name = capability.name.toLowerCase();
       const nameTerms = terms(name);
-      const description = `${capability.description} ${(capability.keywords ?? []).join(" ")}`.toLowerCase();
-      const matched = queryTerms.filter((term) => nameTerms.includes(term) || description.includes(term));
+      const descriptionTerms = new Set(terms(`${capability.description} ${(capability.keywords ?? []).join(" ")}`));
+      const nameMatches = queryTerms.filter((term) => nameTerms.includes(term)).length;
+      const descriptionMatches = queryTerms.filter((term) => descriptionTerms.has(term)).length;
+      const matched = queryTerms.filter((term) => nameTerms.includes(term) || descriptionTerms.has(term)).length;
+      const coverage = matched / queryTerms.length;
       let score = 0;
       if (name === normalized) score = 1;
-      else if (name.startsWith(normalized)) score = 0.9;
-      else if (name.includes(normalized)) score = 0.8;
-      else if (matched.length) {
-        const coverage = matched.length / queryTerms.length;
-        const nameMatches = matched.filter((term) => nameTerms.includes(term)).length;
-        score = Math.min(0.79, 0.18 + 0.48 * coverage + 0.13 * nameMatches / queryTerms.length);
+      else if (coverage === 1 && name.startsWith(normalized)) score = 0.94;
+      else if (coverage === 1 && name.includes(normalized)) score = 0.84 + 0.09 * normalized.length / name.length;
+      else if (coverage === 1 && queryTerms.length === 1 && nameTerms.some((term) => term.startsWith(normalized))) {
+        score = 0.68 + 0.12 * normalized.length / name.length;
+      } else if (matched) {
+        score = Math.min(0.79, 0.12 + 0.43 * coverage + 0.19 * nameMatches / queryTerms.length
+          + 0.05 * descriptionMatches / queryTerms.length);
       }
-      return { capability, score: Math.round(score * 100) / 100 };
+      return { capability, score: Math.round(score * 1000) / 1000, coverage };
     })
-    .filter((hit) => hit.score >= 0.25)
+    .filter((hit) => hit.score >= 0.3 && (queryTerms.length === 1 || hit.coverage >= 0.6))
     .sort((a, b) => b.score - a.score || a.capability.name.localeCompare(b.capability.name))
-    .slice(0, limit);
+    .slice(0, limit)
+    .map(({ capability, score }) => ({ capability, score }));
 }
 
 export function searchTools(

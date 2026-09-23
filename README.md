@@ -42,7 +42,7 @@ capability({"action":"search","query":"查询 GitHub 仓库问题","types":["mcp
 capability({"action":"load","names":["mcp:mcp"]})
 ```
 
-搜索结果会给出带类型的能力 ID，例如 `skill:xxx`、`memory:memory_search` 或 `context:文件路径`。加载时优先使用这个 ID。工具、MCP 和记忆检索工具会在**下一次模型请求**中可用；技能和项目资料的选定文本会直接作为本次加载的结果返回。
+搜索结果会给出带类型的能力 ID，例如 `skill:xxx`、`memory:memory_search` 或 `context:文件路径`。加载时优先使用这个 ID。工具、MCP 和记忆检索工具会在**下一次模型请求**中可用；技能和项目资料的选定文本会直接作为本次加载的结果返回；若需按问题挑选资料段落，加载 context 时显式传入 `query`。
 
 用户也可以使用以下 Pi 命令检查路由器：
 
@@ -70,7 +70,7 @@ capability({"action":"load","names":["mcp:mcp"]})
 }
 ```
 
-**默认模式保留 Pi 原有行为。**`skills.mode` 为 `"safe"` 时，Pi 仍会在初始提示中列出技能目录；`context.strictMode` 为 `false` 时，Pi 仍会载入原有资料文件。
+`context.paths` 只扫描所列路径与默认的根目录文件、`docs/`；如果项目资料放在 `计划文档/` 等目录，请显式配置相对项目根目录的路径（例如 `"paths": ["计划文档", "待解决", "参考文档"]`），不要依赖子项目 `docs/` 的测试结果。**默认模式保留 Pi 原有行为。**`skills.mode` 为 `"safe"` 时，Pi 仍会在初始提示中列出技能目录；`context.strictMode` 为 `false` 时，Pi 仍会载入原有资料文件。
 
 如需进一步缩小初始提示，可把技能模式改为 `"strict"`，或把资料模式改为 `true`。启用严格资料模式后，`AGENTS.md` 等项目规则也不会自动进入模型提示；需要通过 `capability` 搜索并加载相关文件。已有的 `toolSearch.alwaysEnabled` 及状态栏显示设置仍受支持。
 
@@ -78,10 +78,14 @@ capability({"action":"load","names":["mcp:mcp"]})
 
 ```powershell
 npm test            # 单元与集成测试（mock Pi，不联网）
-npm run benchmark   # 读取 benchmark/before.json 与 after.json，输出字符估算节省
+npm run benchmark   # 仅读取已保存快照；不会重新测量
+npm run benchmark:live            # 真实 RPC 采集，输出结果，不写快照
+npm run benchmark:live -- --update # 核对环境后显式更新基准快照（调用模型）
 npm run test:live   # 真实 Pi RPC 冒烟测试（需要联网调用模型）
 npm run test:race   # 同轮并行调用竞态探针（模型行为相关，结果非确定性）
 ```
+
+`npm run test:live` 与 `benchmark:live` 使用当前**已安装**的扩展；仅编辑仓库源码不会使它们测试到新代码，须先在测试环境加载或部署新版本。
 
 `npm run test:live` 会启动一个真实的 Pi 会话（`--mode rpc --no-session --offline`），
 加载已安装的扩展后依次验证：启动时只激活核心工具、三个 `/capability` 斜杠命令、
@@ -96,4 +100,6 @@ npm run test:race   # 同轮并行调用竞态探针（模型行为相关，结�
 且空参调用返回 schema 校验错误而非 "not found"）。由于依赖模型配合度，结果每次运行可能不同，
 仅作为回归探针而非通过/失败门禁。
 
-`/capability stats` 显示当前 Pi 环境中的工具数量、工具定义字符估算和按需加载情况。仓库中的基准文件记录的是 **JSON 字符数估算**，不能当作模型服务商的实际 Token 计费数据。
+`/capability stats` 显示当前 Pi 环境中的工具数量、工具定义字符估算和按需加载情况。`npm run benchmark` **只读取历史快照，不测量当前环境**；扩展和 Pi 版本变化后须显式运行 `benchmark:live`，记录采集时间、Pi 版本、模型和工具数，并人工复核后再更新快照。`before.json` 是同一启动时刻的**全量注册工具字符反事实估算**，不是全量激活时的计费 token 实测；`after.json` 额外记录路由器首轮实际 `usage`。`benchmark/isolated-ab.json` 的同模型隔离 A/B 仅验证路由器固定开销，不能当作全量环境节省的 token 数。
+
+`capability` 自身工具 schema 在 2026-09-23 测得约 **1,003 字符**，还会增加少量提示文本；隔离的四工具环境首轮输入实测多 **403 token（+8.3%）**。因此轻量项目可能净亏；隐藏的工具 schema 足够大、且使用回合够多时才划算。不要用字符数直接推算计费 token 或承诺统一的盈亏平衡点。搜索结果为**词法匹配而非语义理解**；加载的工具在本会话内保持激活，长会话的节省会随加载数量减少。

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (pi-capability-router)
+
+- Add explicit live schema snapshots and isolated token-usage A/B; disclose fixed overhead and cached-token measurement limits.
+- Improve lexical ranking and multiword filtering; remove speculative MCP gateway keywords and implicit context query state.
+- Warn on invalid configuration and conflicting `tool_search` registration.
+
 ## pi-capability-router 0.2.0 - 2026-09-23
 
 - Skills milestone: index Pi-discovered Skills and load one SKILL.md at a time; add opt-in strict catalog hiding.
@@ -15,23 +21,27 @@
 - Preserved the next-request activation hint and legacy `toolSearch` bootstrap settings.
 - Added unit and lifecycle tests plus an isolated Pi RPC benchmark snapshot.
 
-## [0.3.6] - 2026-04-24
+## Archived pi-tool-search history (separate product and version series)
+
+Entries below are inherited from the predecessor and do not denote pi-capability-router releases.
+
+### [0.3.6] - 2026-04-24
 
 ### Bug Fixes
 - Clear footer status when `toolSearch.showToolSearchFooterStatus` is `false`, and re-read setting each refresh so settings changes take effect without stale status.
 - Add explicit `showToolSearchFooterStatus` config name with backward compatibility for older status keys.
 
-## [0.3.5] - 2026-04-23
+### [0.3.5] - 2026-04-23
 
 ### Other
 - Add `pi install npm:pi-tool-search` command to README
 
-## [0.3.4] - 2026-04-23
+### [0.3.4] - 2026-04-23
 
 ### Other
 - Clarify core defaults and token-saving purpose
 
-## [0.3.3] - 2026-04-23
+### [0.3.3] - 2026-04-23
 
 ### Bug Fixes
 - Refresh active tools on every `turn_start`, not only fresh user prompts, so unlocked tools stay available during agent-loop continuations
@@ -41,18 +51,18 @@
 ### Other
 - Document same-response activation caveat and recovery behavior in `README.md`
 
-## [0.3.2] - 2026-04-23
+### [0.3.2] - 2026-04-23
 
 ### Bug Fixes
 - Split `tool_search` description into "Already active" and "Hidden" sections so LLM skips redundant enable calls
 - Add `grep` and `find` to default core tools (always enabled alongside `read`, `write`, `edit`, `bash`)
 
-## [0.3.1] - 2026-04-23
+### [0.3.1] - 2026-04-23
 
 ### Other
 - Add repository field to package.json
 
-## 0.3.0
+### 0.3.0
 
 - Renamed from `pi-lazy-tools` to `pi-tool-search`
 - Config key changed: `lazyTools` → `toolSearch` in `settings.json`
@@ -60,12 +70,12 @@
 - Provider-agnostic: removed payload-level filtering, relies solely on `setActiveTools`
 - `readUserConfig()` consolidates all settings reads into one call
 
-## 0.2.0
+### 0.2.0
 
 - User config: add `"toolSearch": { "alwaysEnabled": ["lsp", "grep"] }` to `settings.json` to pre-unlock tools beyond the defaults
 - Reads config at each `session_start` — no reinstall needed after changes
 
-## 0.1.0
+### 0.1.0
 
 - Initial release
 - Manifest-aware `tool_search` gate

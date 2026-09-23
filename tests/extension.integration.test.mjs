@@ -82,6 +82,14 @@ test("Pi lifecycle hides non-core tools, then activates one on load", async () =
   assert.ok(!pi.activeHistory.at(-1).includes("web_search"));
 });
 
+test("conflicting tool_search registration surfaces a session warning", () => {
+  const statuses = new Map();
+  const pi = makePi([{ name: "tool_search", description: "Original router", parameters: {} }]);
+  capabilityRouter(pi);
+  pi.handlers.get("session_start")({}, { cwd: process.cwd(), ui: { setStatus: (key, value) => statuses.set(key, value) } });
+  assert.match(statuses.get("capability-router-conflict"), /Disable one of them/);
+});
+
 test("Strict Skills and Context hide Pi catalog but remain searchable and loadable", async () => {
   const dir = mkdtempSync(join(tmpdir(), "router-strict-"));
   process.env.TEST_PI_AGENT_DIR = dir;
@@ -130,8 +138,10 @@ test("MCP gateway and memory retrieval use existing Pi tools with bounded result
   const ctx = { cwd: process.cwd(), ui: { setStatus() {} }, isIdle: () => false };
   pi.handlers.get("session_start")({}, ctx);
   const tool = pi.tools.get("capability");
-  const mcpSearch = await tool.execute("1", { action: "search", query: "github issues", types: ["mcp"] }, undefined, undefined, ctx);
+  const mcpSearch = await tool.execute("1", { action: "search", query: "MCP external servers", types: ["mcp"] }, undefined, undefined, ctx);
   assert.match(mcpSearch.content[0].text, /mcp:mcp/);
+  const noFakeGithub = await tool.execute("1b", { action: "search", query: "github issues", types: ["mcp"] }, undefined, undefined, ctx);
+  assert.doesNotMatch(noFakeGithub.content[0].text, /mcp:mcp/);
   await tool.execute("2", { action: "load", names: ["mcp:mcp", "memory:memory_search"] }, undefined, undefined, ctx);
   assert.ok(pi.activeHistory.at(-1).includes("mcp"));
   assert.ok(pi.activeHistory.at(-1).includes("memory_search"));

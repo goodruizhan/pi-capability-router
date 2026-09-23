@@ -28,6 +28,8 @@ export default function capabilityRouter(pi: ExtensionAPI) {
   let skillCatalogChars = 0;
   let retrievedMemoryChars = 0;
   let retrievedMemoryCount = 0;
+  let configWarning = "";
+  let conflictWarning = "";
 
   function refreshTools() {
     const allTools = pi.getAllTools();
@@ -85,7 +87,6 @@ export default function capabilityRouter(pi: ExtensionAPI) {
   function search(query: string, types: CapabilityType[] | undefined, limit: number) {
     if (!types?.length || types.includes("context")) discoverContext();
     const hits = searchCapabilities(candidates(types), query, activeIds(), limit);
-    if ((!types?.length || types.includes("context")) && config.context.enabled) context.search(query, limit);
     return hits;
   }
 
@@ -115,6 +116,8 @@ export default function capabilityRouter(pi: ExtensionAPI) {
       `MCP: ${mcp.list().length} adapter tools indexed`,
       `Memory: ${memory.list().length} retrieval tools / ${retrievedMemoryCount} retrievals / ${retrievedMemoryChars} result chars`,
       `Context: ${context.list().length} indexed / ${context.loaded.size} loaded / ${context.loadedChars} loaded chars`,
+      ...(configWarning ? [`Config warning: ${configWarning}`] : []),
+      ...(conflictWarning ? [`Conflict warning: ${conflictWarning}`] : []),
     ].join("\n");
   }
 
@@ -152,7 +155,7 @@ export default function capabilityRouter(pi: ExtensionAPI) {
         const hits = search(query, params.types, limit);
         const resultText = hits.length
           ? hits.map((hit, index) => `${index + 1}. ${hit.capability.id} [${hit.capability.type}] score=${hit.score.toFixed(2)}\n   ${hit.capability.description.replace(/\s+/g, " ").slice(0, 160)}`).join("\n")
-          : `No matching hidden capabilities for "${query}". Try broader wording or continue with current capabilities.`;
+          : `No lexical matches for "${query}". Try broader wording or continue with current capabilities.`;
         return { content: [{ type: "text", text: resultText }] };
       }
       const names = params.names ?? [];
@@ -201,7 +204,8 @@ export default function capabilityRouter(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", (_event, ctx) => {
-    config = readConfig(getAgentDir());
+    configWarning = "";
+    config = readConfig(getAgentDir(), (message) => { configWarning = message; });
     cwd = ctx.cwd || process.cwd();
     skills.reset();
     context.reset();
@@ -211,8 +215,13 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     retrievedMemoryChars = 0;
     retrievedMemoryCount = 0;
     refreshTools();
+    conflictWarning = pi.getAllTools().some((tool) => tool.name === "tool_search")
+      ? "pi-tool-search also registered tool_search; both extensions control active tools. Disable one of them."
+      : "";
     session.reset(config.bootstrapTools, registry.list(), routerSchemaChars());
     applyActiveTools(ctx);
+    ctx.ui.setStatus("capability-router-config", configWarning || undefined);
+    ctx.ui.setStatus("capability-router-conflict", conflictWarning || undefined);
   });
 
   pi.on("before_agent_start", (event) => {

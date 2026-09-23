@@ -42,7 +42,7 @@ capability({"action":"search","query":"find GitHub repository issues","types":["
 capability({"action":"load","names":["mcp:mcp"]})
 ```
 
-Search results include type-qualified IDs such as `skill:xxx`, `memory:memory_search`, or `context:<file-path>`. Prefer these IDs when loading. Tools, MCP tools, and memory retrieval tools become available on the **next model request**. Loading a skill or project document returns a bounded excerpt immediately.
+Search results include type-qualified IDs such as `skill:xxx`, `memory:memory_search`, or `context:<file-path>`. Prefer these IDs when loading. Tools, MCP tools, and memory retrieval tools become available on the **next model request**. Loading a skill or project document returns a bounded excerpt immediately. Pass `query` explicitly when loading context to rank excerpts by topic.
 
 You can inspect the router with Pi commands:
 
@@ -70,7 +70,7 @@ Add `capabilityRouter` to Pi's `settings.json`. The values below are defaults, s
 }
 ```
 
-**The defaults preserve Pi's existing prompt behavior.** With `skills.mode: "safe"`, Pi still lists available skills in its initial prompt. With `context.strictMode: false`, Pi still includes its usual context files.
+`context.paths` is needed for project documents outside the root files and `docs/` tree (for example `"paths": ["计划文档", "待解决", "参考文档"]` when running from this workspace root). **The defaults preserve Pi's existing prompt behavior.** With `skills.mode: "safe"`, Pi still lists available skills in its initial prompt. With `context.strictMode: false`, Pi still includes its usual context files.
 
 To reduce the initial prompt further, set `skills.mode` to `"strict"` or `context.strictMode` to `true`. Strict context mode also removes files such as `AGENTS.md` from Pi's automatic prompt; search and load the relevant file through `capability` when needed. Existing `toolSearch.alwaysEnabled` and footer visibility settings remain supported.
 
@@ -78,10 +78,14 @@ To reduce the initial prompt further, set `skills.mode` to `"strict"` or `contex
 
 ```powershell
 npm test            # unit + integration tests (mock Pi, no network)
-npm run benchmark   # reads benchmark/before.json + after.json, prints estimated chars saved
+npm run benchmark               # reads saved snapshots only; does not remeasure
+npm run benchmark:live          # live RPC collection, prints without modifying snapshots
+npm run benchmark:live -- --update # explicitly refresh snapshots after reviewing the environment
 npm run test:live   # live Pi RPC smoke test (calls a real model, needs network)
 npm run test:race   # same-turn parallel-call race probe (model-dependent, non-deterministic)
 ```
+
+`npm run test:live` and `benchmark:live` exercise the **installed** router; editing repository sources alone does not deploy them. Load or deploy the changed version in a test environment before treating these runs as validation of new code.
 
 `npm run test:live` starts a real Pi session (`--mode rpc --no-session --offline`) with the
 installed extensions and verifies in order: startup activates only the core tools, the three
@@ -100,4 +104,6 @@ request (the model can name the tool's required parameters, and an empty-argumen
 schema validation error rather than "not found"). Because it depends on model compliance the
 outcome varies between runs, so treat it as a regression probe, not a pass/fail gate.
 
-`/capability stats` reports tool counts, estimated tool-schema characters, and on-demand loads in the current Pi environment. The repository benchmarks measure **JSON character counts**, not actual provider-billed tokens.
+`/capability stats` reports tool counts, estimated tool-schema characters, and on-demand loads. `npm run benchmark` **only compares saved snapshots**, not the current environment. Re-run `benchmark:live` when Pi or installed extensions change, then review the environment before updating snapshots. `before.json` represents an **all-registered-tools character counterfactual**, not billed tokens for an all-active run. `after.json` additionally records actual first-turn model usage. The same-model isolated A/B in `benchmark/isolated-ab.json` measures fixed overhead only, **not** full-environment token savings.
+
+The `capability` tool schema measured about **1,003 characters** on 2026-09-23, plus a short prompt snippet. In an isolated four-tool environment it cost **403 additional first-turn input tokens (+8.3%)**. Small tool sets may therefore be a net loss; there is no universal break-even token number. Search uses **lexical matching, not semantic retrieval**. Loaded tools remain active through the session, reducing savings in long sessions.

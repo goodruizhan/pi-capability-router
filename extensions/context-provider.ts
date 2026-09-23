@@ -28,10 +28,9 @@ export class ContextProvider {
   private cachedText = new Map<string, string>();
   readonly loaded = new Set<string>();
   loadedChars = 0;
-  private latestQuery = "";
 
   reset(): void {
-    this.contexts.clear(); this.cachedText.clear(); this.loaded.clear(); this.loadedChars = 0; this.latestQuery = "";
+    this.contexts.clear(); this.cachedText.clear(); this.loaded.clear(); this.loadedChars = 0;
   }
 
   discover(cwd: string, piFiles: Array<{ path: string; content: string }>, configuredPaths: string[], maxFiles: number): void {
@@ -87,11 +86,10 @@ export class ContextProvider {
     return this.contexts.get(nameOrId.replace(/^context:/, "")) ?? this.list().find((item) => item.name === nameOrId);
   }
   search(query: string, limit: number): SearchHit<ContextDescriptor>[] {
-    this.latestQuery = query;
     return searchCapabilities(this.list(), query, this.loaded, limit);
   }
 
-  load(nameOrId: string, maxChars: number, query = this.latestQuery): { text: string; loaded: boolean } {
+  load(nameOrId: string, maxChars: number, query = ""): { text: string; loaded: boolean } {
     const item = this.get(nameOrId);
     if (!item) return { text: `Unknown context: ${nameOrId}`, loaded: false };
     if (this.loaded.has(item.id)) return { text: `Context already loaded: ${item.path}`, loaded: false };

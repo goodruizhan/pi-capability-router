@@ -26,7 +26,7 @@ export class McpProvider {
           ? "MCP gateway for external servers. Load it, then use mcp search to discover and call server tools."
           : tool.description ?? "MCP direct tool",
         toolName: tool.name,
-        keywords: tool.name === "mcp" ? ["github", "browser", "external", "server", "api", "database", "repository", "issues"] : [],
+        keywords: [],
       });
     }
   }

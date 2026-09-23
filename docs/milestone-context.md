@@ -4,4 +4,4 @@ Context Provider 首次搜索时才索引当前项目的根目录 `README.md`、
 
 搜索只返回文件名和简短标题；加载时按最近查询挑选相关段落、去重、附来源路径，默认最多 8000 字符。`context.strictMode: false` 保留 Pi 原有 Context Files 提示；显式设置 `true` 后才从初始提示移除 Pi Context Files，项目规则不再自动进入模型，必须按需搜索加载。
 
-验收：测试确认项目文档可按正文关键词检索、相关段落受长度限制、重复加载不会重复注入；严格模式集成测试确认 Pi Context Files 从提示选项中移除而仍可检索。真实 Pi RPC `/capability search architecture` 命中了本项目架构文档。
+验收：测试确认项目文档可按正文关键词检索、相关段落受长度限制、重复加载不会重复注入；严格模式集成测试确认 Pi Context Files 从提示选项中移除而仍可检索。真实 Pi RPC `/capability search architecture` 命中了本项目架构文档（当时 cwd 是 `pi-capability-router/`，该目录有 `docs/`）；在工作区根目录 `D:/Project/AI插件` 运行须配置 `context.paths`，首次搜索后才会建立索引，未搜索前 `/capability status` 显示 0 属正常。
