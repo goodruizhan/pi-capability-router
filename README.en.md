@@ -77,8 +77,27 @@ To reduce the initial prompt further, set `skills.mode` to `"strict"` or `contex
 ## Tests and statistics
 
 ```powershell
-npm test
-npm run benchmark
+npm test            # unit + integration tests (mock Pi, no network)
+npm run benchmark   # reads benchmark/before.json + after.json, prints estimated chars saved
+npm run test:live   # live Pi RPC smoke test (calls a real model, needs network)
+npm run test:race   # same-turn parallel-call race probe (model-dependent, non-deterministic)
 ```
+
+`npm run test:live` starts a real Pi session (`--mode rpc --no-session --offline`) with the
+installed extensions and verifies in order: startup activates only the core tools, the three
+`/capability` slash commands, a model turn that finds a hidden tool via `capability`, the
+footer count rising by exactly one after `load` across a turn boundary, and a duplicate load
+returning `Already active` with the count unchanged. Every raw RPC line is written to
+`scripts/trace/*.jsonl` for inspection. This test calls a real model and takes about 1–3 minutes.
+
+`npm run test:race` targets the known limitation recorded in
+[`docs/same-turn-race-bug.md`](docs/same-turn-race-bug.md): it forces the model to emit
+`capability(load)` together with a call to the newly loaded tool in a single assistant message.
+The race does not reproduce in practice — the model checks its own tool schema and refuses to
+call a tool that has not been activated, which is itself evidence that the prompt mitigation
+works. The script also verifies that a loaded tool definition actually reaches the next model
+request (the model can name the tool's required parameters, and an empty-argument call returns a
+schema validation error rather than "not found"). Because it depends on model compliance the
+outcome varies between runs, so treat it as a regression probe, not a pass/fail gate.
 
 `/capability stats` reports tool counts, estimated tool-schema characters, and on-demand loads in the current Pi environment. The repository benchmarks measure **JSON character counts**, not actual provider-billed tokens.

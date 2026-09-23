@@ -77,8 +77,23 @@ capability({"action":"load","names":["mcp:mcp"]})
 ## 测试与统计
 
 ```powershell
-npm test
-npm run benchmark
+npm test            # 单元与集成测试（mock Pi，不联网）
+npm run benchmark   # 读取 benchmark/before.json 与 after.json，输出字符估算节省
+npm run test:live   # 真实 Pi RPC 冒烟测试（需要联网调用模型）
+npm run test:race   # 同轮并行调用竞态探针（模型行为相关，结果非确定性）
 ```
+
+`npm run test:live` 会启动一个真实的 Pi 会话（`--mode rpc --no-session --offline`），
+加载已安装的扩展后依次验证：启动时只激活核心工具、三个 `/capability` 斜杠命令、
+模型通过 `capability` 搜索到隐藏工具、跨回合 `load` 激活后页脚计数 +1、
+重复加载返回 `Already active` 且计数不变。每行原始 RPC 事件会写入
+`scripts/trace/*.jsonl` 以便排查。该测试会真实调用模型，耗时约 1–3 分钟。
+
+`npm run test:race` 针对 [`docs/same-turn-race-bug.md`](docs/same-turn-race-bug.md) 记录的
+已知缺陷：强制模型在同一条回复里同时发出 `capability(load)` 与对新加载工具的调用。实测该竞态
+未能复现——模型会核对自身工具 schema 并拒绝调用尚未激活的工具，这本身就是提示词缓解生效的证据。
+该脚本同时会验证加载后的工具定义确实进入了下一个模型请求（模型能报出该工具的必填参数，
+且空参调用返回 schema 校验错误而非 "not found"）。由于依赖模型配合度，结果每次运行可能不同，
+仅作为回归探针而非通过/失败门禁。
 
 `/capability stats` 显示当前 Pi 环境中的工具数量、工具定义字符估算和按需加载情况。仓库中的基准文件记录的是 **JSON 字符数估算**，不能当作模型服务商的实际 Token 计费数据。
