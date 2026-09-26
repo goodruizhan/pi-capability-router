@@ -52,6 +52,10 @@ You can inspect the router with Pi commands:
 /capability stats               Show counts and character estimates
 ```
 
+Tools activated by sibling extensions via `setActiveTools()` (such as dynamic subagent tools) survive router refreshes. Externally revoked tools are not re-enabled. Starting/loading a session still resets the bootstrap set; historical loads are not persisted yet.
+
+Search accepts space/comma-separated compound names or typed IDs, e.g. `memory_search subagents_enable`. Ordinary task queries retain lexical coverage filtering, not semantic retrieval.
+
 ## Configuration
 
 Add `capabilityRouter` to Pi's `settings.json`. The values below are defaults, so you only need to specify fields you want to change:
@@ -81,9 +85,12 @@ npm test            # unit + integration tests (mock Pi, no network)
 npm run benchmark               # reads saved snapshots only; does not remeasure
 npm run benchmark:live          # live RPC collection, prints without modifying snapshots
 npm run benchmark:live -- --update # explicitly refresh snapshots after reviewing the environment
+npm run test:host   # current source + isolated real host; no model calls
 npm run test:live   # live Pi RPC smoke test (calls a real model, needs network)
 npm run test:race   # same-turn parallel-call race probe (model-dependent, non-deterministic)
 ```
+
+`test:host` requires a resolvable `@earendil-works/pi-coding-agent` (tested on 0.87.1), or `PI_HOST_MODULE` pointing to its `dist/index.js` file URL. It explicitly loads this checkout with temporary configuration and an in-memory session, then tests harmless dynamic echo activation, execution and revocation. It does not load user extensions, call a model or update the installed package; it is a host lifecycle check, not model-driven end-to-end coverage.
 
 `npm run test:live` and `benchmark:live` exercise the **installed** router; editing repository sources alone does not deploy them. Load or deploy the changed version in a test environment before treating these runs as validation of new code.
 

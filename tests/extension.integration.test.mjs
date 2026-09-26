@@ -50,7 +50,8 @@ function makePi(extraTools = []) {
     registerTool(tool) { tools.set(tool.name, tool); },
     registerCommand() {},
     getAllTools() { return [...baseTools, ...extraTools, ...tools.values()]; },
-    setActiveTools(names) { activeHistory.push(names); },
+    getActiveTools() { return activeHistory.at(-1) ?? baseTools.map((tool) => tool.name); },
+    setActiveTools(names) { activeHistory.push([...names]); },
     sendMessage(message) { messages.push(message); },
   };
 }
@@ -80,6 +81,34 @@ test("Pi lifecycle hides non-core tools, then activates one on load", async () =
 
   pi.handlers.get("session_start")({}, ctx);
   assert.ok(!pi.activeHistory.at(-1).includes("web_search"));
+});
+
+test("external activation survives turns and router loads without undoing external revocation", async () => {
+  const extras = [];
+  const pi = makePi(extras);
+  capabilityRouter(pi);
+  const ctx = { cwd: process.cwd(), ui: { setStatus() {} }, isIdle: () => false };
+  pi.handlers.get("session_start")({}, ctx);
+  extras.push({ name: "subagent", description: "Delegate work", parameters: {} });
+  pi.setActiveTools([...pi.getActiveTools(), "subagent"]);
+  pi.handlers.get("turn_start")({}, ctx);
+  assert.ok(pi.getActiveTools().includes("subagent"));
+  const capability = pi.tools.get("capability");
+  const status = await capability.execute("status", { action: "status" }, undefined, undefined, ctx);
+  assert.match(status.content[0].text, /Session: 6 active tools/);
+  const search = await capability.execute("search", { action: "search", query: "subagent", types: ["tool"] }, undefined, undefined, ctx);
+  assert.match(search.content[0].text, /No lexical matches/);
+  const duplicate = await capability.execute("dup", { action: "load", names: ["subagent"] }, undefined, undefined, ctx);
+  assert.match(duplicate.content[0].text, /Already active: subagent/);
+  await capability.execute("load", { action: "load", names: ["web_search"] }, undefined, undefined, ctx);
+  assert.ok(pi.getActiveTools().includes("subagent"));
+  pi.setActiveTools(pi.getActiveTools().filter((name) => name !== "subagent"));
+  pi.handlers.get("turn_start")({}, ctx);
+  assert.ok(!pi.getActiveTools().includes("subagent"), "do not resurrect another extension's revoked tool");
+  assert.ok(pi.getActiveTools().includes("web_search"));
+  pi.setActiveTools([...pi.getActiveTools(), "subagent"]);
+  pi.handlers.get("session_start")({}, ctx);
+  assert.deepEqual(pi.getActiveTools(), ["capability", "read", "bash", "edit", "write"]);
 });
 
 test("conflicting tool_search registration surfaces a session warning", () => {

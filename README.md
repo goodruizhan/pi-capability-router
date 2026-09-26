@@ -52,6 +52,10 @@ capability({"action":"load","names":["mcp:mcp"]})
 /capability stats               查看数量与字符统计
 ```
 
+路由器也保留兄弟扩展通过 `setActiveTools()` 启用的工具（如 `subagents_enable` 的动态工具），不会在下一回合将它们隐藏；这些外部工具被原扩展撤销后也不会被自动恢复。重新启动/加载会话仍重置为启动工具集，暂不持久化历史加载状态。
+
+搜索支持用空格或逗号列出完整复合名称或类型 ID，例如 `memory_search subagents_enable`；普通任务描述仍按词法覆盖率筛选，并非语义检索。
+
 ## 配置
 
 在 Pi 的 `settings.json` 中添加 `capabilityRouter`。以下均为默认值，可只填写需要修改的字段：
@@ -78,12 +82,15 @@ capability({"action":"load","names":["mcp:mcp"]})
 
 ```powershell
 npm test            # 单元与集成测试（mock Pi，不联网）
+npm run test:host   # 当前源码 + 隔离真实宿主，动态激活/执行/撤销（不调用模型）
 npm run benchmark   # 仅读取已保存快照；不会重新测量
 npm run benchmark:live            # 真实 RPC 采集，输出结果，不写快照
 npm run benchmark:live -- --update # 核对环境后显式更新基准快照（调用模型）
 npm run test:live   # 真实 Pi RPC 冒烟测试（需要联网调用模型）
 npm run test:race   # 同轮并行调用竞态探针（模型行为相关，结果非确定性）
 ```
+
+`test:host` 需要可解析的 `@earendil-works/pi-coding-agent`（本轮验证 0.87.1），也可用 `PI_HOST_MODULE` 指向指定宿主的 `dist/index.js` 文件 URL。它使用临时工作目录/配置和内存会话，明确加载本仓库源码，只注册无副作用 echo 工具；不加载用户插件、不访问模型、不更新安装副本。它验证真实宿主工具集合和执行器，不代表模型选择工具或同轮调用行为的端到端测试。
 
 `npm run test:live` 与 `benchmark:live` 使用当前**已安装**的扩展；仅编辑仓库源码不会使它们测试到新代码，须先在测试环境加载或部署新版本。
 

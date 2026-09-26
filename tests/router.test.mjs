@@ -47,6 +47,22 @@ test("lexical ranking distinguishes substring quality and filters incomplete mul
     ["browser_click", "computer_use_browser_click"]);
 });
 
+test("search recognizes lists of exact names and typed IDs without weakening task filtering", () => {
+  const items = [
+    { id: "memory:memory_search", type: "memory", name: "memory_search", description: "Retrieve prior decisions" },
+    { id: "tool:subagents_enable", type: "tool", name: "subagents_enable", description: "Enable delegation" },
+    { id: "skill:ue5-module-router", type: "skill", name: "ue5-module-router", description: "Route UE5 modules" },
+  ];
+  for (const query of ["memory_search subagents_enable", "memory:memory_search, tool:subagents_enable", "`MEMORY_SEARCH` and subagents_enable"]) {
+    assert.deepEqual(searchCapabilities(items, query, new Set(), 8).map((hit) => hit.capability.name),
+      ["memory_search", "subagents_enable"], query);
+  }
+  assert.deepEqual(searchCapabilities(items, "memory:memory_search", new Set(), 8).map((hit) => hit.capability.id), ["memory:memory_search"]);
+  assert.deepEqual(searchCapabilities(items, "memory_search subagents_enable", new Set(["memory:memory_search"]), 8).map((hit) => hit.capability.name), ["subagents_enable"]);
+  assert.deepEqual(searchCapabilities(items, "capability router", new Set(), 8), []);
+  assert.deepEqual(searchCapabilities(items, "not_memory_search_x unrelated words", new Set(), 8), []);
+});
+
 test("load is additive and idempotent; a new session resets it", () => {
   const registry = new CapabilityRegistry();
   registry.refresh(tools);

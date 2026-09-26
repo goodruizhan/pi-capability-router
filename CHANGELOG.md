@@ -2,6 +2,10 @@
 
 ## Unreleased (pi-capability-router)
 
+- Preserve sibling extensions' dynamic tool activations across router refreshes without resurrecting externally revoked tools.
+- Recognize lists of exact compound capability names and typed IDs without weakening ordinary lexical task filtering.
+- Add deterministic real-host smoke validation of current source, with isolated state and no model calls.
+
 - Add explicit live schema snapshots and isolated token-usage A/B; disclose fixed overhead and cached-token measurement limits.
 - Improve lexical ranking and multiword filtering; remove speculative MCP gateway keywords and implicit context query state.
 - Warn on invalid configuration and conflicting `tool_search` registration.

@@ -30,6 +30,20 @@ export default function capabilityRouter(pi: ExtensionAPI) {
   let retrievedMemoryCount = 0;
   let configWarning = "";
   let conflictWarning = "";
+  // Observe sibling extensions without turning their activations into permanent
+  // router-owned loads: their later deactivation must remain authoritative.
+  const externalActive = new Set<string>();
+
+  function syncExternalTools() {
+    for (const name of externalActive) session.active.delete(name);
+    externalActive.clear();
+    for (const name of pi.getActiveTools()) {
+      if (registry.get(name) && !session.active.has(name)) {
+        externalActive.add(name);
+        session.active.add(name);
+      }
+    }
+  }
 
   function refreshTools() {
     const allTools = pi.getAllTools();
@@ -90,8 +104,9 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     return hits;
   }
 
-  function applyActiveTools(ctx?: { ui: { setStatus(id: string, content: string | undefined): void } }) {
+  function applyActiveTools(ctx?: { ui: { setStatus(id: string, content: string | undefined): void } }, preserveExternal = true) {
     refreshTools();
+    if (preserveExternal) syncExternalTools();
     const known = new Set(registry.list().map((item) => item.name));
     const active = [...session.active].filter((name) => known.has(name));
     pi.setActiveTools(["capability", ...active]);
@@ -145,6 +160,7 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       refreshTools();
+      syncExternalTools();
       if (params.action === "status") {
         return { content: [{ type: "text", text: `Active tools: ${["capability", ...session.active].join(", ")}\nLoaded skills: ${[...skills.loaded].join(", ") || "none"}\nLoaded context: ${context.loaded.size}\n${statsText()}` }] };
       }
@@ -191,6 +207,7 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     description: "Inspect capability router: status, stats, or search <query>",
     async handler(args, ctx) {
       refreshTools();
+      syncExternalTools();
       captureResources(ctx.getSystemPromptOptions());
       const [action, ...rest] = args.trim().split(/\s+/);
       if (action === "stats") ctx.ui.notify(statsText(), "info");
@@ -218,8 +235,10 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     conflictWarning = pi.getAllTools().some((tool) => tool.name === "tool_search")
       ? "pi-tool-search also registered tool_search; both extensions control active tools. Disable one of them."
       : "";
+    externalActive.clear();
     session.reset(config.bootstrapTools, registry.list(), routerSchemaChars());
-    applyActiveTools(ctx);
+    // Startup gating deliberately ignores the host's initially eager tool set.
+    applyActiveTools(ctx, false);
     ctx.ui.setStatus("capability-router-config", configWarning || undefined);
     ctx.ui.setStatus("capability-router-conflict", conflictWarning || undefined);
   });
