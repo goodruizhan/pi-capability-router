@@ -42,7 +42,7 @@ capability({"action":"search","query":"find GitHub repository issues","types":["
 capability({"action":"load","names":["mcp:mcp"]})
 ```
 
-Search results include type-qualified IDs such as `skill:xxx`, `memory:memory_search`, or `context:<file-path>`. Prefer these IDs when loading. Tools, MCP tools, and memory retrieval tools become available on the **next model request**. Loading a skill or project document returns a bounded excerpt immediately. Pass `query` explicitly when loading context to rank excerpts by topic.
+Search results include type-qualified IDs such as `skill:xxx`, `memory:memory_search`, or `context:<file-path>`. Prefer these IDs when loading. Tools, MCP tools, and memory retrieval tools become available on the **next model request**. Loading changes availability only; it does not authorize execution or create a new task. If asked only to load, acknowledge and stop; otherwise continue only the user's already requested task and constraints. Loading a skill or project document returns a bounded excerpt immediately. Pass `query` explicitly when loading context to rank excerpts by topic.
 
 You can inspect the router with Pi commands:
 
@@ -86,11 +86,17 @@ npm run benchmark               # reads saved snapshots only; does not remeasure
 npm run benchmark:live          # live RPC collection, prints without modifying snapshots
 npm run benchmark:live -- --update # explicitly refresh snapshots after reviewing the environment
 npm run test:host   # current source + isolated real host; no model calls
+npm run test:models -- --list  # offline catalog, no credential checks or model calls
+npm run test:models -- --live --model provider/model-id # explicit real call (repeat --model)
 npm run test:live   # live Pi RPC smoke test (calls a real model, needs network)
 npm run test:race   # same-turn parallel-call race probe (model-dependent, non-deterministic)
 ```
 
-`test:host` requires a resolvable `@earendil-works/pi-coding-agent` (tested on 0.87.1), or `PI_HOST_MODULE` pointing to its `dist/index.js` file URL. It explicitly loads this checkout with temporary configuration and an in-memory session, then tests harmless dynamic echo activation, execution and revocation. It does not load user extensions, call a model or update the installed package; it is a host lifecycle check, not model-driven end-to-end coverage.
+`test:host` requires a resolvable `@earendil-works/pi-coding-agent` (tested on 0.87.1), or `PI_HOST_MODULE` pointing to its `dist/index.js` file URL. It explicitly loads this checkout with temporary configuration and an in-memory session, then tests harmless dynamic echo activation, execution and revocation. It then runs the isolated SDK checks in `tests/*.host.mjs`, including hidden echo discovery/activation and offline auth-command preflight. These SDK checks are separate from the default mock/unit `npm test` suite. It does not load user extensions, call a model or update the installed package; it is a host lifecycle check, not model-driven end-to-end coverage.
+
+`test:models` loads this checkout in the real Pi SDK (`@earendil-works/pi-coding-agent`, or `PI_HOST_MODULE=file:///.../dist/index.js`), an isolated temporary workspace/configuration, in-memory credentials/session/model cache, and only this Router plus a harmless hidden echo tool. It does not discover arbitrary user extensions. For extension-only providers, explicitly add trusted `--provider-extension <absolute-path>`; inspect the extension first. `--list` reads the built-in and user `models.json` catalog without loading provider extensions, evaluating auth commands, or calling models, so extension-only models are absent. No live request is made without `--live --model provider/id`. The optional `--timeout-ms 90000` (1000–300000) bounds each model; at most nine requests are forwarded, with no automatic retries or silent model substitution. JSON reports each model, stage, actual tool events, usage/latency and sanitized failure category (`auth`, `billing`, `rate_limit`, `unsupported_thinking`, `unsupported`, `model_unavailable`, `network`, or `unknown`) with safe HTTP status/code when available; it never emits raw provider errors, auth or response bodies. Any failed or skipped requested model exits nonzero. Passing requires a real separate-request search, load, validated echo call, and final ACK using a random receipt revealed only by the tool result. Optional Jev joint probing is not supported by this isolated harness.
+
+If your existing proxy environment variables require Node's built-in proxy support, set `NODE_USE_ENV_PROXY=1` **for the test command only** (Bash: `NODE_USE_ENV_PROXY=1 npm run test:models -- --live --model provider/id`; PowerShell: `$old=$env:NODE_USE_ENV_PROXY; try { $env:NODE_USE_ENV_PROXY='1'; npm run test:models -- --live --model provider/id } finally { $env:NODE_USE_ENV_PROXY=$old }`). A standalone SDK process does not inherit the Pi CLI proxy dispatcher. Do not change global proxy configuration. A 429 remains a failed model; this harness does not add retries or inter-request pacing, so the matrix runner must space calls externally.
 
 `npm run test:live` and `benchmark:live` exercise the **installed** router; editing repository sources alone does not deploy them. Load or deploy the changed version in a test environment before treating these runs as validation of new code.
 

@@ -81,8 +81,10 @@ capability({"action":"load","names":["mcp:mcp"]})
 ## 测试与统计
 
 ```powershell
-npm test            # 单元与集成测试（mock Pi，不联网）
-npm run test:host   # 当前源码 + 隔离真实宿主，动态激活/执行/撤销（不调用模型）
+npm test            # 纯离线单元/集成测试（mock Pi 与 SDK；不联网）
+npm run test:host   # 基础宿主 smoke + 两个真实 SDK 宿主测试（不调用模型）
+npm run test:models -- --list # 不联网，列出内置及 models.json 的模型（不加载 provider 扩展）
+npm run test:models -- --live --model provider/model-id # 显式付费调用；可重复 --model
 npm run benchmark   # 仅读取已保存快照；不会重新测量
 npm run benchmark:live            # 真实 RPC 采集，输出结果，不写快照
 npm run benchmark:live -- --update # 核对环境后显式更新基准快照（调用模型）
@@ -90,7 +92,13 @@ npm run test:live   # 真实 Pi RPC 冒烟测试（需要联网调用模型）
 npm run test:race   # 同轮并行调用竞态探针（模型行为相关，结果非确定性）
 ```
 
-`test:host` 需要可解析的 `@earendil-works/pi-coding-agent`（本轮验证 0.87.1），也可用 `PI_HOST_MODULE` 指向指定宿主的 `dist/index.js` 文件 URL。它使用临时工作目录/配置和内存会话，明确加载本仓库源码，只注册无副作用 echo 工具；不加载用户插件、不访问模型、不更新安装副本。它验证真实宿主工具集合和执行器，不代表模型选择工具或同轮调用行为的端到端测试。
+`test:host` 需要可解析的 `@earendil-works/pi-coding-agent`（本轮验证 0.87.1），也可用 `PI_HOST_MODULE` 指向指定宿主的 `dist/index.js` 文件 URL。它先运行基础宿主 smoke，再运行 `tests/*.host.mjs` 中两个真实 SDK 宿主测试；测试使用临时目录/配置，不调用模型、不更新安装副本。真实 SDK 测试不属于默认 `npm test`，后者仅运行离线测试与 mock；host 测试分别覆盖真实工具注册/执行，以及 `--list`/缺失模型预检不会执行环境凭据命令。它们不代表模型端到端行为测试。
+
+`test:models` 直接加载本仓库源码及当前真实 SDK 宿主（默认 `@earendil-works/pi-coding-agent`，或用 `PI_HOST_MODULE=file:///.../dist/index.js` 选择宿主）。每个模型使用隔离临时工作目录/配置、内存会话及只加载 Router、无副作用 echo 与显式指定的 provider 扩展：`--provider-extension /absolute/path/to/index.ts` 可重复；provider 模块是可信代码，务必自行审查。不会自动加载用户其他扩展/代理。真实调用必须显式 `--live --model provider/id`；可选 `--timeout-ms 90000`（1000–300000，单模型含初始化），最多 9 次实际模型请求（第 10 次在 SDK 调用前阻断），关闭自动重试；失败/跳过均返回非零退出码。输出 JSON 含逐模型阶段、实际工具事件参数（含随机 nonce）、使用量和耗时；失败仅提供安全的 HTTP 状态/限定错误代码及类别（如 auth、billing、rate_limit、unsupported_thinking、unsupported、model_unavailable、network 或 unknown），不打印凭据、原始异常文本或响应正文。只接受模型**真的**按顺序 search、另一用户请求 load、下一请求调用已激活 echo 且读到回显中只有工具结果才包含的随机 `RECEIPT` 并回复 `ACK:<RECEIPT>` 的成功结果。任何模型选择变化均失败，不自动换模型。
+
+加载工具仅改变下一次模型请求中的可用性，**不授权自动执行新工具或新增任务**；若用户仅要求加载，应确认后停止，否则只继续用户已要求的任务和限制。测试中若已有代理环境变量而独立 Node SDK 无法走代理，可**仅为测试命令**指定 `NODE_USE_ENV_PROXY=1`（Bash：`NODE_USE_ENV_PROXY=1 npm run test:models -- --live --model provider/id`；PowerShell：`$old=$env:NODE_USE_ENV_PROXY; try { $env:NODE_USE_ENV_PROXY='1'; npm run test:models -- --live --model provider/id } finally { $env:NODE_USE_ENV_PROXY=$old }`）。Pi CLI 的代理分发器不会自动传给独立 SDK；不修改全局代理或环境设置。429 仍如实失败；此探针不做自动重试或请求间节流，需由矩阵执行者控制调用间隔。
+
+认证由 SDK 的 ModelRuntime 处理：仅从用户 auth.json 读取所选 provider 的凭据到**内存**，OAuth 刷新也只写内存；读取用户 models.json、使用内存模型缓存，可使用进程已有的环境变量。不会写用户配置/认证/安装目录。`--list` 不加载 provider 扩展、不检查认证/执行密钥命令、不发模型请求，故不能列出只由 provider 扩展注册的模型；此类模型请在审查扩展后用 `--live --provider-extension ... --model ...` 探测。可选 Jev 联合 `assess_risk` 暂不支持：额外扩展会改变工具池及权限边界，需另行设计隔离方案。此工具不提供计费总额保障；若 provider 扩展自行发请求或持有常驻资源，SDK 的超时不能强制结束其后台 I/O，须人工审查。旧 `test:live` 仍测试已安装环境。
 
 `npm run test:live` 与 `benchmark:live` 使用当前**已安装**的扩展；仅编辑仓库源码不会使它们测试到新代码，须先在测试环境加载或部署新版本。
 

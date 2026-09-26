@@ -2,6 +2,9 @@
 
 ## Unreleased (pi-capability-router)
 
+- Clarify that loading tools only changes availability, not authorization: preserve the latest user constraints and stop after load-only requests; retain next-request activation and recovery hint.
+- Add isolated current-source Pi SDK multi-model probe with offline real-host regressions, strict staged evidence and sanitized provider-failure categories (including billing and unavailable models).
+
 - Preserve sibling extensions' dynamic tool activations across router refreshes without resurrecting externally revoked tools.
 - Recognize lists of exact compound capability names and typed IDs without weakening ordinary lexical task filtering.
 - Add deterministic real-host smoke validation of current source, with isolated state and no model calls.

@@ -10,8 +10,8 @@ import { searchCapabilities, type SearchableCapability } from "./search.ts";
 import { CapabilitySession } from "./session.ts";
 import { SkillProvider, type PiSkill } from "./skill-provider.ts";
 
-const DESCRIPTION = "Search hidden tools, skills, MCP, memory and project context. Load only what the task needs. Tool loads take effect on the next model request; skill and context loads return bounded source text.";
-const PROMPT_SNIPPET = "When current tools or context are insufficient, use capability to search and load the minimum needed. Load new tools alone, then use them on the next response.";
+const DESCRIPTION = "Search hidden tools, skills, MCP, memory and project context. Load only what the task needs. New tools become available on the next model request; loading does not authorize calling them. Skill and context loads return bounded source text.";
+const PROMPT_SNIPPET = "When tools or context are insufficient, search and load only what the user needs. Load new tools alone; availability on the next model request is not authorization to execute. Preserve the latest user constraints: if asked only to load, acknowledge and stop.";
 type CapabilityType = SearchableCapability["type"];
 
 export default function capabilityRouter(pi: ExtensionAPI) {
@@ -191,7 +191,7 @@ export default function capabilityRouter(pi: ExtensionAPI) {
         applyActiveTools();
         pi.sendMessage({
           customType: "capability-load-hint",
-          content: `Capability load complete: ${toolResult.enabled.join(", ")} active. Continue the original task on the next model request. Retry only calls that failed because a tool was inactive.`,
+          content: `Capability load complete: ${toolResult.enabled.length} tool(s) available on the next model request. Activation only changes availability; it does not authorize execution or create a new task. Preserve the latest user request and constraints: if asked only to load, acknowledge and stop. Otherwise continue only the task already requested. Retry only calls that failed because a tool was inactive.`,
           display: false,
           details: { enabled: toolResult.enabled },
         }, { deliverAs: ctx.isIdle() ? "followUp" : "steer", triggerTurn: true });

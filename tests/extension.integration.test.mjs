@@ -83,6 +83,27 @@ test("Pi lifecycle hides non-core tools, then activates one on load", async () =
   assert.ok(!pi.activeHistory.at(-1).includes("web_search"));
 });
 
+test("tool load hint is bounded, preserves user authorization, and duplicate loads send no hint", async () => {
+  const pi = makePi();
+  capabilityRouter(pi);
+  const ctx = { cwd: process.cwd(), ui: { setStatus() {} }, isIdle: () => false };
+  pi.handlers.get("session_start")({}, ctx);
+  const capability = pi.tools.get("capability");
+  assert.match(capability.description, /not (?:authorize|authorization|an instruction)/i);
+  assert.match(capability.promptSnippet, /only.*load|load.*only/i);
+  await capability.execute("load", { action: "load", names: ["web_search"] }, undefined, undefined, ctx);
+  assert.equal(pi.messages.length, 1);
+  const hint = pi.messages[0].content;
+  assert.ok(hint.length < 500, "hint must remain bounded");
+  assert.match(hint, /next model request/i);
+  assert.match(hint, /latest user.*constraints/i);
+  assert.match(hint, /activation.*(?:not authorize|does not authorize)/i);
+  assert.match(hint, /only.*load.*stop/i);
+  assert.match(hint, /retry only.*inactive/i);
+  await capability.execute("duplicate", { action: "load", names: ["web_search"] }, undefined, undefined, ctx);
+  assert.equal(pi.messages.length, 1);
+});
+
 test("external activation survives turns and router loads without undoing external revocation", async () => {
   const extras = [];
   const pi = makePi(extras);
