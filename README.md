@@ -2,7 +2,7 @@
 
 语言：[简体中文](README.md) · [English](README.en.md)
 
-`pi-capability-router` 是一个 Pi 扩展。它让不常用的工具默认不出现在模型的工具列表中，并提供统一的 `capability` 入口：需要额外能力时先搜索，再加载完成当前任务所需的部分。
+`pi-capability-router` 是一个 Pi 扩展，面向 Pi Coding Agent 1.0（`@earendil-works/pi-coding-agent` ^1.0.0）。它让不常用的工具默认不出现在模型的工具列表中，并提供统一的 `capability` 入口：需要额外能力时先搜索，再加载完成当前任务所需的部分。
 
 目前支持工具、技能、MCP 服务、记忆检索和项目资料。路由器负责发现与加载；工具执行、MCP 连接和认证、记忆存储仍由原有的 Pi 扩展负责。
 
@@ -92,7 +92,7 @@ npm run test:live   # 真实 Pi RPC 冒烟测试（需要联网调用模型）
 npm run test:race   # 同轮并行调用竞态探针（模型行为相关，结果非确定性）
 ```
 
-`test:host` 需要可解析的 `@earendil-works/pi-coding-agent`（本轮验证 0.87.1），也可用 `PI_HOST_MODULE` 指向指定宿主的 `dist/index.js` 文件 URL。它先运行基础宿主 smoke，再运行 `tests/*.host.mjs` 中两个真实 SDK 宿主测试；测试使用临时目录/配置，不调用模型、不更新安装副本。真实 SDK 测试不属于默认 `npm test`，后者仅运行离线测试与 mock；host 测试分别覆盖真实工具注册/执行，以及 `--list`/缺失模型预检不会执行环境凭据命令。它们不代表模型端到端行为测试。
+`test:host` 需要可解析的 `@earendil-works/pi-coding-agent`（本轮验证 1.0.0），也可用 `PI_HOST_MODULE` 指向指定宿主的 `dist/index.js` 文件 URL。它先运行基础宿主 smoke，再运行 `tests/*.host.mjs` 中两个真实 SDK 宿主测试；测试使用临时目录/配置，不调用模型、不更新安装副本。真实 SDK 测试不属于默认 `npm test`，后者仅运行离线测试与 mock；host 测试分别覆盖真实工具注册/执行，以及 `--list`/缺失模型预检不会执行环境凭据命令。它们不代表模型端到端行为测试。
 
 `test:models` 直接加载本仓库源码及当前真实 SDK 宿主（默认 `@earendil-works/pi-coding-agent`，或用 `PI_HOST_MODULE=file:///.../dist/index.js` 选择宿主）。每个模型使用隔离临时工作目录/配置、内存会话及只加载 Router、无副作用 echo 与显式指定的 provider 扩展：`--provider-extension /absolute/path/to/index.ts` 可重复；provider 模块是可信代码，务必自行审查。不会自动加载用户其他扩展/代理。真实调用必须显式 `--live --model provider/id`；可选 `--timeout-ms 90000`（1000–300000，单模型含初始化），最多 9 次实际模型请求（第 10 次在 SDK 调用前阻断），关闭自动重试；失败/跳过均返回非零退出码。输出 JSON 含逐模型阶段、实际工具事件参数（含随机 nonce）、使用量和耗时；失败仅提供安全的 HTTP 状态/限定错误代码及类别（如 auth、billing、rate_limit、unsupported_thinking、unsupported、model_unavailable、network 或 unknown），不打印凭据、原始异常文本或响应正文。只接受模型**真的**按顺序 search、另一用户请求 load、下一请求调用已激活 echo 且读到回显中只有工具结果才包含的随机 `RECEIPT` 并回复 `ACK:<RECEIPT>` 的成功结果。任何模型选择变化均失败，不自动换模型。
 

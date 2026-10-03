@@ -1,5 +1,12 @@
 # Changelog
 
+## pi-capability-router 0.3.0 - 2026-10-03
+
+- Target Pi Coding Agent 1.0: import the host API from `@earendil-works/pi-coding-agent` and TypeBox from `typebox`, the module names the 1.0 extension docs specify; peer and dev dependencies now require `^1.0.0`.
+- Follow the 1.0 tool-result contract: every `capability` result carries the required `details` field (`details: undefined` where there is no structured state).
+- Respect 1.0 tool exposure: tools registered with `exposure: "hidden"` are unreachable even when activated, so the router no longer offers them as searchable, loadable capabilities.
+- `npm test` mocks and real-host smoke updated for the 1.0 module names; offline suite 20/20 and real-SDK host tests pass against `@earendil-works/pi-coding-agent` 1.0.0 with zero model calls.
+
 ## Unreleased (pi-capability-router)
 
 - Clarify that loading tools only changes availability, not authorization: preserve the latest user constraints and stop after load-only requests; retain next-request activation and recovery hint.

@@ -1,6 +1,6 @@
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { readConfig } from "./config.ts";
 import { ContextProvider } from "./context-provider.ts";
 import { McpProvider } from "./mcp-provider.ts";
@@ -46,7 +46,9 @@ export default function capabilityRouter(pi: ExtensionAPI) {
   }
 
   function refreshTools() {
-    const allTools = pi.getAllTools();
+    // `hidden` exposure means registered but unreachable: activation is a no-op,
+    // so the router must not offer such tools as loadable capabilities.
+    const allTools = pi.getAllTools().filter((tool) => tool.exposure !== "hidden");
     registry.refresh(allTools);
     if (config.mcp.enabled) mcp.refresh(allTools);
     if (config.memory.enabled) memory.refresh(allTools);
@@ -162,17 +164,17 @@ export default function capabilityRouter(pi: ExtensionAPI) {
       refreshTools();
       syncExternalTools();
       if (params.action === "status") {
-        return { content: [{ type: "text", text: `Active tools: ${["capability", ...session.active].join(", ")}\nLoaded skills: ${[...skills.loaded].join(", ") || "none"}\nLoaded context: ${context.loaded.size}\n${statsText()}` }] };
+        return { content: [{ type: "text", text: `Active tools: ${["capability", ...session.active].join(", ")}\nLoaded skills: ${[...skills.loaded].join(", ") || "none"}\nLoaded context: ${context.loaded.size}\n${statsText()}` }], details: undefined };
       }
       if (params.action === "search") {
         const query = params.query?.trim();
-        if (!query) return { content: [{ type: "text", text: "Provide a nonempty query for search." }] };
+        if (!query) return { content: [{ type: "text", text: "Provide a nonempty query for search." }], details: undefined };
         const limit = params.limit === undefined ? config.searchLimit : Math.max(1, Math.min(Math.trunc(params.limit) || 1, 20));
         const hits = search(query, params.types, limit);
         const resultText = hits.length
           ? hits.map((hit, index) => `${index + 1}. ${hit.capability.id} [${hit.capability.type}] score=${hit.score.toFixed(2)}\n   ${hit.capability.description.replace(/\s+/g, " ").slice(0, 160)}`).join("\n")
           : `No lexical matches for "${query}". Try broader wording or continue with current capabilities.`;
-        return { content: [{ type: "text", text: resultText }] };
+        return { content: [{ type: "text", text: resultText }], details: undefined };
       }
       const names = params.names ?? [];
       if (!names.length) return { content: [{ type: "text", text: "Provide exact capability IDs from search for load." }] };
@@ -199,7 +201,7 @@ export default function capabilityRouter(pi: ExtensionAPI) {
       if (toolResult.enabled.length) outputs.push(`Loaded tools: ${toolResult.enabled.join(", ")}. Available on the next model request.`);
       if (toolResult.already.length) outputs.push(`Already active: ${toolResult.already.join(", ")}`);
       if (toolResult.unknown.length || unknown.length) outputs.push(`Unknown: ${[...toolResult.unknown, ...unknown].join(", ")}`);
-      return { content: [{ type: "text", text: outputs.join("\n\n") || "Nothing changed." }] };
+      return { content: [{ type: "text", text: outputs.join("\n\n") || "Nothing changed." }], details: undefined };
     },
   });
 

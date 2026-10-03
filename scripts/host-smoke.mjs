@@ -1,5 +1,5 @@
 // Deterministic real-host check: current checkout, isolated state, no model calls.
-// Requires @earendil-works/pi-coding-agent (tested on 0.87.1).
+// Requires @earendil-works/pi-coding-agent (tested on 1.0.0).
 // PI_HOST_MODULE may point to another installed host's dist/index.js file URL.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

@@ -20,10 +20,10 @@ const mockTypebox = `
 `;
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    if (specifier === "@mariozechner/pi-coding-agent") {
+    if (specifier === "@earendil-works/pi-coding-agent") {
       return { url: `data:text/javascript,${encodeURIComponent(mockPi)}`, shortCircuit: true };
     }
-    if (specifier === "@sinclair/typebox") {
+    if (specifier === "typebox") {
       return { url: `data:text/javascript,${encodeURIComponent(mockTypebox)}`, shortCircuit: true };
     }
     return nextResolve(specifier, context);
