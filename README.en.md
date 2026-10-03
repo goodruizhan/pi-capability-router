@@ -40,6 +40,8 @@ capability({"action":"load","names":["skill:name-from-search-results"]})
 
 capability({"action":"search","query":"find GitHub repository issues","types":["mcp"]})
 capability({"action":"load","names":["mcp:mcp"]})
+
+capability({"action":"unload","names":["web_search"]})   # deactivate loaded tools within the session
 ```
 
 Search results include type-qualified IDs such as `skill:xxx`, `memory:memory_search`, or `context:<file-path>`. Prefer these IDs when loading. Tools, MCP tools, and memory retrieval tools become available on the **next model request**. Loading changes availability only; it does not authorize execution or create a new task. If asked only to load, acknowledge and stop; otherwise continue only the user's already requested task and constraints. Loading a skill or project document returns a bounded excerpt immediately. Pass `query` explicitly when loading context to rank excerpts by topic.
@@ -54,7 +56,7 @@ You can inspect the router with Pi commands:
 
 Tools activated by sibling extensions via `setActiveTools()` (such as dynamic subagent tools) survive router refreshes. Externally revoked tools are not re-enabled. Starting/loading a session still resets the bootstrap set; historical loads are not persisted yet.
 
-Search accepts space/comma-separated compound names or typed IDs, e.g. `memory_search subagents_enable`. Ordinary task queries retain lexical coverage filtering, not semantic retrieval.
+Search accepts space/comma-separated compound names or typed IDs, e.g. `memory_search subagents_enable`. Ordinary task queries retain lexical coverage filtering, not semantic retrieval. CJK queries match through Han-run character bigrams (e.g. 之前提到过什么 hits memory keywords containing 之前); recall is still lexical, not semantic.
 
 ## Configuration
 
@@ -65,7 +67,7 @@ Add `capabilityRouter` to Pi's `settings.json`. The values below are defaults, s
   "capabilityRouter": {
     "bootstrapTools": ["read", "bash", "edit", "write"],
     "showFooterStatus": true,
-    "search": { "limit": 8 },
+    "search": { "limit": 14 },
     "skills": { "mode": "safe", "maxChars": 8000 },
     "providers": { "mcp": true, "memory": true, "context": true },
     "memory": { "maxResults": 5, "maxCharsPerResult": 2000, "maxTotalChars": 6000 },
@@ -120,3 +122,12 @@ outcome varies between runs, so treat it as a regression probe, not a pass/fail 
 `/capability stats` reports tool counts, estimated tool-schema characters, and on-demand loads. `npm run benchmark` **only compares saved snapshots**, not the current environment. Re-run `benchmark:live` when Pi or installed extensions change, then review the environment before updating snapshots. `before.json` represents an **all-registered-tools character counterfactual**, not billed tokens for an all-active run. `after.json` additionally records actual first-turn model usage. The same-model isolated A/B in `benchmark/isolated-ab.json` measures fixed overhead only, **not** full-environment token savings.
 
 The `capability` tool schema measured about **1,003 characters** on 2026-09-23, plus a short prompt snippet. In an isolated four-tool environment it cost **403 additional first-turn input tokens (+8.3%)**. Small tool sets may therefore be a net loss; there is no universal break-even token number. Search uses **lexical matching, not semantic retrieval**. Loaded tools remain active through the session, reducing savings in long sessions.
+
+**Quote measured API tokens, not schema-character estimates.** Character figures present the best case as the general one. Isolated same-day A/B fixtures (`sensenova/sensenova-6.8-flash-lite`, 17-tool environment, router-only vs. a 14-tool judgment-layer extension only):
+
+| Measure | All registered | Startup active | Saving |
+|---|---|---|---|
+| Schema chars (isolated fixture) | 5941 chars | 3694 chars | 37.8% (char estimate) |
+| **Real API input tokens** | **5743** | **2848** | **-50.6% (measured)** |
+
+In the same data, "both extensions installed = router only = 2848 tokens" — the router fully absorbed the other extension's tool-schema context cost. Char estimates and token measurements are not interchangeable across environments; cite the measurement environment and date.

@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { searchCapabilities, type SearchHit } from "./search.ts";
+import { searchCapabilities, searchTerms, type SearchHit } from "./search.ts";
 
 export interface ContextDescriptor {
   id: string;
@@ -13,6 +13,8 @@ export interface ContextDescriptor {
 
 const EXTS = new Set([".md", ".txt"]);
 const SKIP = new Set(["node_modules", ".git", "dist", "build"]);
+/** Files above this size are refused before reading, mirroring discover()'s 1 MB cap. */
+const MAX_CONTEXT_BYTES = 1024 * 1024;
 
 function within(path: string, root: string): boolean {
   const rel = relative(root, path);
@@ -94,8 +96,14 @@ export class ContextProvider {
     if (!item) return { text: `Unknown context: ${nameOrId}`, loaded: false };
     if (this.loaded.has(item.id)) return { text: `Context already loaded: ${item.path}`, loaded: false };
     try {
-      const text = readFileSync(item.path, "utf8").slice(0, 1024 * 1024);
-      const terms = query.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+      // Size check before reading: a file swapped in after discover() (or a
+      // cached piFiles entry) could exceed the 1 MB discover cap, and
+      // readFileSync would still load the whole thing before slicing.
+      if (statSync(item.path).size > MAX_CONTEXT_BYTES) {
+        return { text: `Context too large to load: ${item.path} (limit ${MAX_CONTEXT_BYTES} bytes)`, loaded: false };
+      }
+      const text = readFileSync(item.path, "utf8").slice(0, MAX_CONTEXT_BYTES);
+      const terms = searchTerms(query);
       const chunks = text.split(/\n\s*\n/).map((body, index) => ({
         body,
         index,

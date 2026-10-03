@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased (pi-capability-router) — 2026-10-04 test-report batch
+
+Fixes and behaviors from the 2026-10-04 cross-component test report:
+
+- Preserve `exposure: "hidden"` tools that another extension activated: the router's full-list `setActiveTools` no longer drops them on `turn_start` (the host builtin tool-search no longer gets wiped by a router refresh).
+- Remove the stale conflict warning that fired on any `tool_search` registration; since 0.3.0 the router's own tool is `capability`, so that warning blamed a third-party package that was not involved. Cooperation with sibling extensions is now expressed by preserving their activations instead.
+- `capability` gains an `unload` action: deactivate tools within the session (effective on the next model request); skill/context loads are reported as not unloadable. A router-unloaded tool is not resurrected as an "external" activation before the host list refreshes.
+- CJK search recall: Han runs are compared through character bigrams, so `之前提到过什么` matches keywords containing `之前` (previously any Chinese query returned "No lexical matches"). Context-load chunk scoring uses the same bigrams.
+- Multi-name queries (`grep, lsp, find`) surface each named capability instead of being filtered by task coverage; a short single-term query now really matches by prefix (`gre` → `grep`) — the old branch required full-token coverage and was unreachable.
+- Redacted `memory_search`/`session_search` results keep `details`, `structuredContent`, `isError` and `usage`; only the model-facing text is bounded. `tool_call` clamps `limit` for `session_search` too.
+- `SkillProvider.load` and `ContextProvider.load` stat the file before reading (10 MB / 1 MB caps) instead of reading a potentially huge file and slicing afterwards.
+- Invalid `capabilityRouter` config values (wrong type/non-finite) are reported through the config status line instead of silently falling back; multiple warnings accumulate. Default `search.limit` raised from 8 to 14 so a first search can list all 14 jev tools.
+- `/capability status|stats` prints the router version; a root `tsconfig.json` plus `npm run typecheck` gates the type layer (the missing `details` field TS2322 can no longer pass silently).
+- README states savings in measured API tokens (-50.6% in the isolated 17-tool A/B) instead of the schema-character estimate, with the measurement environment disclosed.
+
 ## pi-capability-router 0.3.0 - 2026-10-03
 
 - Target Pi Coding Agent 1.0: import the host API from `@earendil-works/pi-coding-agent` and TypeBox from `typebox`, the module names the 1.0 extension docs specify; peer and dev dependencies now require `^1.0.0`.
@@ -18,7 +33,7 @@
 
 - Add explicit live schema snapshots and isolated token-usage A/B; disclose fixed overhead and cached-token measurement limits.
 - Improve lexical ranking and multiword filtering; remove speculative MCP gateway keywords and implicit context query state.
-- Warn on invalid configuration and conflicting `tool_search` registration.
+- Warn on invalid configuration (superseded by the accumulating config status warnings above); the `tool_search` conflict warning was removed as stale.
 
 ## pi-capability-router 0.2.0 - 2026-09-23
 

@@ -83,3 +83,37 @@ test("load is additive and idempotent; a new session resets it", () => {
   assert.equal(session.active.has("web_search"), false);
   assert.equal(session.activationCount, 0);
 });
+
+// ── 2026-10-04 test report: CJK recall + name-list + prefix queries ─────
+
+test("CJK queries match through Han-run bigrams", () => {
+  const items = [
+    { id: "memory:1", type: "memory", name: "memory_search", description: "previous earlier remember history before 之前 以前 记忆 历史" },
+    { id: "tool:grep", type: "tool", name: "grep", description: "search file contents 文件搜索" },
+    { id: "tool:find", type: "tool", name: "find", description: "find files" },
+  ];
+  // The full sentence shares the bigram 之前 with the memory keywords.
+  assert.deepEqual(searchCapabilities(items, "之前提到过什么", new Set(), 8).map((hit) => hit.capability.id), ["memory:1"]);
+  // A single CJK word matches directly and via containment in a longer run.
+  assert.deepEqual(searchCapabilities(items, "记忆", new Set(), 8).map((hit) => hit.capability.id), ["memory:1"]);
+  assert.deepEqual(searchCapabilities(items, "文件搜索", new Set(), 8).map((hit) => hit.capability.id), ["tool:grep"]);
+  // Unrelated CJK stays unmatched.
+  assert.deepEqual(searchCapabilities(items, "完全无关的词", new Set(), 8), []);
+});
+
+test("a comma/space list of exact capability names surfaces each of them", () => {
+  const registry = new CapabilityRegistry();
+  registry.refresh(tools);
+  const hits = searchCapabilities(registry.list(), "read, bash", new Set(), 8);
+  assert.deepEqual(hits.map((hit) => hit.capability.name).sort(), ["bash", "read"]);
+  assert.ok(hits.every((hit) => hit.score >= 0.99));
+  // A task-style query that merely mentions a name keeps coverage semantics.
+  assert.deepEqual(searchCapabilities(registry.list(), "read unrelated words", new Set(), 8), []);
+});
+
+test("a short single-term query prefixes a name", () => {
+  const registry = new CapabilityRegistry();
+  registry.refresh(tools);
+  const hits = searchCapabilities(registry.list(), "comp", new Set(), 8);
+  assert.equal(hits[0]?.capability.name, "computer_use_click");
+});

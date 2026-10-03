@@ -132,12 +132,70 @@ test("external activation survives turns and router loads without undoing extern
   assert.deepEqual(pi.getActiveTools(), ["capability", "read", "bash", "edit", "write"]);
 });
 
-test("conflicting tool_search registration surfaces a session warning", () => {
+test("tool_search registration no longer fabricates a conflict warning", () => {
+  // v0.3.0 renamed the router tool to `capability`; a `tool_search` tool is the
+  // host builtin, and the old warning blamed a third-party package that is not
+  // involved. No status may be emitted for it.
   const statuses = new Map();
-  const pi = makePi([{ name: "tool_search", description: "Original router", parameters: {} }]);
+  const pi = makePi([{ name: "tool_search", description: "Host builtin", parameters: {} }]);
   capabilityRouter(pi);
   pi.handlers.get("session_start")({}, { cwd: process.cwd(), ui: { setStatus: (key, value) => statuses.set(key, value) } });
-  assert.match(statuses.get("capability-router-conflict"), /Disable one of them/);
+  assert.ok(!statuses.has("capability-router-conflict"));
+});
+
+test("hidden tools activated by another extension survive turn_start", () => {
+  const extras = [];
+  const pi = makePi(extras);
+  capabilityRouter(pi);
+  const ctx = { cwd: process.cwd(), ui: { setStatus() {} }, isIdle: () => false };
+  pi.handlers.get("session_start")({}, ctx);
+  extras.push({ name: "hidden_tool", description: "Orchestrated elsewhere", parameters: {}, exposure: "hidden" });
+  pi.setActiveTools([...pi.getActiveTools(), "hidden_tool"]);
+  pi.handlers.get("turn_start")({}, ctx);
+  assert.ok(pi.getActiveTools().includes("hidden_tool"), "full-list setActiveTools must not drop external hidden tools");
+});
+
+test("unload deactivates a loaded tool until it is loaded again", async () => {
+  const pi = makePi();
+  capabilityRouter(pi);
+  const ctx = { cwd: process.cwd(), ui: { setStatus() {} }, isIdle: () => false };
+  pi.handlers.get("session_start")({}, ctx);
+  const capability = pi.tools.get("capability");
+  await capability.execute("1", { action: "load", names: ["web_search"] }, undefined, undefined, ctx);
+  assert.ok(pi.getActiveTools().includes("web_search"));
+  const unload = await capability.execute("2", { action: "unload", names: ["web_search"] }, undefined, undefined, ctx);
+  assert.match(unload.content[0].text, /Deactivated tools: web_search/);
+  assert.ok(!pi.getActiveTools().includes("web_search"));
+  pi.handlers.get("turn_start")({}, ctx);
+  assert.ok(!pi.getActiveTools().includes("web_search"), "unload survives the next turn");
+  const again = await capability.execute("3", { action: "load", names: ["web_search"] }, undefined, undefined, ctx);
+  assert.match(again.content[0].text, /Loaded tools: web_search/);
+  const notTool = await capability.execute("4", { action: "unload", names: ["nonexistent_tool"] }, undefined, undefined, ctx);
+  assert.match(notTool.content[0].text, /Not active: nonexistent_tool/);
+});
+
+test("redacted memory results keep details, isError and usage", () => {
+  const statuses = new Map();
+  const pi = makePi([{ name: "memory_search", description: "Find memories", parameters: {} }]);
+  capabilityRouter(pi);
+  pi.handlers.get("session_start")({}, { cwd: process.cwd(), ui: { setStatus: (key, value) => statuses.set(key, value) } });
+  const details = { hits: [{ id: "m1" }] };
+  const usage = { input_tokens: 10, output_tokens: 2 };
+  const result = pi.handlers.get("tool_result")({
+    toolName: "memory_search",
+    toolCallId: "t1",
+    input: { query: "x" },
+    content: [{ type: "text", text: "A".repeat(9000) }],
+    details,
+    structuredContent: { results: ["m1"] },
+    isError: false,
+    usage,
+  });
+  assert.ok(result.content[0].text.length < 9000, "text is still bounded");
+  assert.equal(result.details, details);
+  assert.deepEqual(result.structuredContent, { results: ["m1"] });
+  assert.equal(result.isError, false);
+  assert.equal(result.usage, usage);
 });
 
 test("Strict Skills and Context hide Pi catalog but remain searchable and loadable", async () => {
@@ -204,4 +262,24 @@ test("MCP gateway and memory retrieval use existing Pi tools with bounded result
   ] });
   assert.ok(result.content[0].text.length <= 6000);
   assert.equal(result.content.length, 1);
+});
+
+test("invalid config values surface a warning instead of silently falling back", () => {
+  const dir = mkdtempSync(join(tmpdir(), "router-config-"));
+  process.env.TEST_PI_AGENT_DIR = dir;
+  try {
+    writeFileSync(join(dir, "settings.json"), JSON.stringify({ capabilityRouter: {
+      search: { limit: "many" },
+      memory: { maxResults: Number.NaN },
+    } }));
+    const statuses = new Map();
+    const pi = makePi();
+    capabilityRouter(pi);
+    pi.handlers.get("session_start")({}, { cwd: process.cwd(), ui: { setStatus: (key, value) => statuses.set(key, value) } });
+    const warning = statuses.get("capability-router-config") ?? "";
+    assert.match(warning, /search\.limit/);
+    assert.match(warning, /memory\.maxResults/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -40,9 +40,11 @@ capability({"action":"load","names":["skill:搜索结果中的名称"]})
 
 capability({"action":"search","query":"查询 GitHub 仓库问题","types":["mcp"]})
 capability({"action":"load","names":["mcp:mcp"]})
+
+capability({"action":"unload","names":["web_search"]})   # 会话内停用已加载的工具
 ```
 
-搜索结果会给出带类型的能力 ID，例如 `skill:xxx`、`memory:memory_search` 或 `context:文件路径`。加载时优先使用这个 ID。工具、MCP 和记忆检索工具会在**下一次模型请求**中可用；技能和项目资料的选定文本会直接作为本次加载的结果返回；若需按问题挑选资料段落，加载 context 时显式传入 `query`。
+搜索结果会给出带类型的能力 ID，例如 `skill:xxx`、`memory:memory_search` 或 `context:文件路径`。加载时优先使用这个 ID。工具、MCP 和记忆检索工具会在**下一次模型请求**中可用；技能和项目资料的选定文本会直接作为本次加载的结果返回；若需按问题挑选资料段落，加载 context 时显式传入 `query`。`unload` 仅作用于工具类能力，停用同样在下一次模型请求生效；技能/资料加载暂不支持卸载。
 
 用户也可以使用以下 Pi 命令检查路由器：
 
@@ -54,7 +56,7 @@ capability({"action":"load","names":["mcp:mcp"]})
 
 路由器也保留兄弟扩展通过 `setActiveTools()` 启用的工具（如 `subagents_enable` 的动态工具），不会在下一回合将它们隐藏；这些外部工具被原扩展撤销后也不会被自动恢复。重新启动/加载会话仍重置为启动工具集，暂不持久化历史加载状态。
 
-搜索支持用空格或逗号列出完整复合名称或类型 ID，例如 `memory_search subagents_enable`；普通任务描述仍按词法覆盖率筛选，并非语义检索。
+搜索支持用空格或逗号列出完整复合名称或类型 ID，例如 `memory_search subagents_enable`；普通任务描述仍按词法覆盖率筛选，并非语义检索。中文查询按汉字 bigram 匹配（如「之前提到过什么」可命中含「之前」关键词的记忆检索工具），但仍是词法召回而非语义理解。
 
 ## 配置
 
@@ -65,7 +67,7 @@ capability({"action":"load","names":["mcp:mcp"]})
   "capabilityRouter": {
     "bootstrapTools": ["read", "bash", "edit", "write"],
     "showFooterStatus": true,
-    "search": { "limit": 8 },
+    "search": { "limit": 14 },
     "skills": { "mode": "safe", "maxChars": 8000 },
     "providers": { "mcp": true, "memory": true, "context": true },
     "memory": { "maxResults": 5, "maxCharsPerResult": 2000, "maxTotalChars": 6000 },
@@ -118,3 +120,12 @@ npm run test:race   # 同轮并行调用竞态探针（模型行为相关，结�
 `/capability stats` 显示当前 Pi 环境中的工具数量、工具定义字符估算和按需加载情况。`npm run benchmark` **只读取历史快照，不测量当前环境**；扩展和 Pi 版本变化后须显式运行 `benchmark:live`，记录采集时间、Pi 版本、模型和工具数，并人工复核后再更新快照。`before.json` 是同一启动时刻的**全量注册工具字符反事实估算**，不是全量激活时的计费 token 实测；`after.json` 额外记录路由器首轮实际 `usage`。`benchmark/isolated-ab.json` 的同模型隔离 A/B 仅验证路由器固定开销，不能当作全量环境节省的 token 数。
 
 `capability` 自身工具 schema 在 2026-09-23 测得约 **1,003 字符**，还会增加少量提示文本；隔离的四工具环境首轮输入实测多 **403 token（+8.3%）**。因此轻量项目可能净亏；隐藏的工具 schema 足够大、且使用回合够多时才划算。不要用字符数直接推算计费 token 或承诺统一的盈亏平衡点。搜索结果为**词法匹配而非语义理解**；加载的工具在本会话内保持激活，长会话的节省会随加载数量减少。
+
+**收益请以 token 实测为准，不要引用字符估算。** 字符口径把最好情况当普遍情况：同一天的三套隔离 fixture 实测（`sensenova/sensenova-6.8-flash-lite`，17 工具环境、只装本路由器 vs 只装 14 个工具的判断层扩展）：
+
+| 口径 | 全量注册 | 启动 active | 节省 |
+|---|---|---|---|
+| schema 字符（隔离 fixture） | 5941 chars | 3694 chars | 37.8%（字符估算） |
+| **真实 API input tokens** | **5743** | **2848** | **-50.6%（token 实测）** |
+
+同组数据里「双装两扩展 = 只装路由器 = 2848 tokens」，即路由器完全吸收了另一扩展工具 schema 的上下文成本。字符估算与 token 实测的差异是系统性的：字符省 37.8% 时 token 实际省 50.6%（反向高估/低估都可能），跨环境不可互相推算，引用时请注明测量环境与日期。

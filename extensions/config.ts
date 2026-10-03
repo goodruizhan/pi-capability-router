@@ -17,10 +17,20 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.max(min, Math.min(Math.trunc(value), max))
-    : fallback;
+function boundedNumber(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+  warn?: (message: string) => void,
+  name = "value",
+): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    warn?.(`Invalid ${name}: expected a finite number, got ${JSON.stringify(value)}; using ${fallback}.`);
+    return fallback;
+  }
+  return Math.max(min, Math.min(Math.trunc(value), max));
 }
 
 export function readConfig(agentDir: string, warn: (message: string) => void = () => {}): RouterConfig {
@@ -42,6 +52,8 @@ export function readConfig(agentDir: string, warn: (message: string) => void = (
   const legacy = settings?.toolSearch ?? {};
   const router = settings?.capabilityRouter ?? {};
   const providers = router.providers ?? {};
+  const bounded = (value: unknown, fallback: number, min: number, max: number, name: string): number =>
+    boundedNumber(value, fallback, min, max, warn, name);
   return {
     bootstrapTools: [
       ...new Set([
@@ -50,23 +62,23 @@ export function readConfig(agentDir: string, warn: (message: string) => void = (
       ]),
     ],
     showFooterStatus: router.showFooterStatus !== false && legacy.showToolSearchFooterStatus !== false && legacy.showFooterStatus !== false && legacy.showStatus !== false,
-    searchLimit: boundedNumber(router.search?.limit, 8, 1, 20),
+    searchLimit: bounded(router.search?.limit, 14, 1, 20, "capabilityRouter.search.limit"),
     skills: {
       mode: router.skills?.mode === "strict" ? "strict" : "safe",
-      maxChars: boundedNumber(router.skills?.maxChars, 8000, 500, 20000),
+      maxChars: bounded(router.skills?.maxChars, 8000, 500, 20000, "capabilityRouter.skills.maxChars"),
     },
     mcp: { enabled: providers.mcp !== false },
     memory: {
       enabled: providers.memory !== false,
-      maxResults: boundedNumber(router.memory?.maxResults, 5, 1, 20),
-      maxCharsPerResult: boundedNumber(router.memory?.maxCharsPerResult, 2000, 100, 10000),
-      maxTotalChars: boundedNumber(router.memory?.maxTotalChars, 6000, 500, 20000),
+      maxResults: bounded(router.memory?.maxResults, 5, 1, 20, "capabilityRouter.memory.maxResults"),
+      maxCharsPerResult: bounded(router.memory?.maxCharsPerResult, 2000, 100, 10000, "capabilityRouter.memory.maxCharsPerResult"),
+      maxTotalChars: bounded(router.memory?.maxTotalChars, 6000, 500, 20000, "capabilityRouter.memory.maxTotalChars"),
     },
     context: {
       enabled: providers.context !== false,
       strictMode: router.context?.strictMode === true,
-      maxInjectedChars: boundedNumber(router.context?.maxInjectedChars, 8000, 500, 20000),
-      maxFiles: boundedNumber(router.context?.maxFiles, 200, 1, 1000),
+      maxInjectedChars: bounded(router.context?.maxInjectedChars, 8000, 500, 20000, "capabilityRouter.context.maxInjectedChars"),
+      maxFiles: bounded(router.context?.maxFiles, 200, 1, 1000, "capabilityRouter.context.maxFiles"),
       paths: stringArray(router.context?.paths),
     },
   };

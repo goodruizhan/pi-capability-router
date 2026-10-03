@@ -26,6 +26,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit",
     "test:live": "node scripts/live-rpc-test.mjs",
     "test:host": "node scripts/host-smoke.mjs && node --test \"tests/*.host.mjs\"",
     "test:models": "node scripts/model-smoke.mjs",
@@ -58,6 +59,7 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^1.0.0"
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "typescript": "^5.8.0"
   }
 }

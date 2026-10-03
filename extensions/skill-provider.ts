@@ -1,4 +1,7 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+
+/** Above this size a skill file is treated as corrupt/hostile and refused. */
+const MAX_SKILL_BYTES = 10 * 1024 * 1024;
 
 export interface PiSkill {
   name: string;
@@ -46,6 +49,12 @@ export class SkillProvider {
     if (!skill) return { text: `Unknown skill: ${name}`, loaded: false };
     if (this.loaded.has(name)) return { text: `Skill already loaded: ${name}`, loaded: false };
     try {
+      // Read only after a size check: readFileSync would load the whole file
+      // into memory before the excerpt slice ever runs.
+      const size = statSync(skill.path).size;
+      if (size > MAX_SKILL_BYTES) {
+        return { text: `Skill too large to load: ${name} (${size} bytes, limit ${MAX_SKILL_BYTES})`, loaded: false };
+      }
       const body = readFileSync(skill.path, "utf8");
       const marker = `\n[Truncated; read ${skill.path} for remaining references if needed.]`;
       const excerpt = body.length > maxChars

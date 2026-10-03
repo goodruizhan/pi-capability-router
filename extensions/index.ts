@@ -1,5 +1,6 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
 import { Type } from "typebox";
 import { readConfig } from "./config.ts";
 import { ContextProvider } from "./context-provider.ts";
@@ -13,6 +14,15 @@ import { SkillProvider, type PiSkill } from "./skill-provider.ts";
 const DESCRIPTION = "Search hidden tools, skills, MCP, memory and project context. Load only what the task needs. New tools become available on the next model request; loading does not authorize calling them. Skill and context loads return bounded source text.";
 const PROMPT_SNIPPET = "When tools or context are insufficient, search and load only what the user needs. Load new tools alone; availability on the next model request is not authorization to execute. Preserve the latest user constraints: if asked only to load, acknowledge and stop.";
 type CapabilityType = SearchableCapability["type"];
+
+/** Package version, shown by status/stats; falls back when the manifest is unavailable. */
+const ROUTER_VERSION = (() => {
+  try {
+    return (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: string }).version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+})();
 
 export default function capabilityRouter(pi: ExtensionAPI) {
   const registry = new CapabilityRegistry();
@@ -29,15 +39,24 @@ export default function capabilityRouter(pi: ExtensionAPI) {
   let retrievedMemoryChars = 0;
   let retrievedMemoryCount = 0;
   let configWarning = "";
-  let conflictWarning = "";
   // Observe sibling extensions without turning their activations into permanent
   // router-owned loads: their later deactivation must remain authoritative.
   const externalActive = new Set<string>();
+  // Tools deactivated through `capability unload`. syncExternalTools() infers
+  // external activations from the host's active list, which still contains a
+  // just-unloaded tool until the next model request — without this guard the
+  // unload would be resurrected as an "external" load immediately.
+  const routerRevoked = new Set<string>();
 
   function syncExternalTools() {
     for (const name of externalActive) session.active.delete(name);
     externalActive.clear();
-    for (const name of pi.getActiveTools()) {
+    const active = pi.getActiveTools();
+    for (const name of routerRevoked) {
+      if (!active.includes(name)) routerRevoked.delete(name);
+    }
+    for (const name of active) {
+      if (routerRevoked.has(name)) continue;
       if (registry.get(name) && !session.active.has(name)) {
         externalActive.add(name);
         session.active.add(name);
@@ -111,7 +130,17 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     if (preserveExternal) syncExternalTools();
     const known = new Set(registry.list().map((item) => item.name));
     const active = [...session.active].filter((name) => known.has(name));
-    pi.setActiveTools(["capability", ...active]);
+    // `hidden` tools never enter the registry, so they are invisible to the
+    // loadable set above — but when another extension activated them, a full
+    // setActiveTools overwrite here would silently deactivate them on every
+    // turn. Preserve whatever hidden tools are currently active.
+    const externalHidden = new Set(
+      pi.getActiveTools().filter((name) => {
+        if (name === "capability" || known.has(name) || session.active.has(name)) return false;
+        return pi.getAllTools().find((tool) => tool.name === name)?.exposure === "hidden";
+      }),
+    );
+    pi.setActiveTools(["capability", ...active, ...externalHidden]);
     if (ctx) ctx.ui.setStatus("capability-router", config.showFooterStatus ? `${active.length + 1} / ${known.size + 1} tools` : undefined);
   }
 
@@ -123,7 +152,7 @@ export default function capabilityRouter(pi: ExtensionAPI) {
   function statsText(): string {
     const stats = session.stats(registry.list(), routerSchemaChars());
     return [
-      "Capability Router Stats (schema JSON character estimates)",
+      `Capability Router v${ROUTER_VERSION} (schema JSON character estimates)`,
       `Startup: ${stats.startupActiveToolCount} active tools / ${stats.startupToolSchemaChars} schema chars`,
       `Registered at startup: ${stats.startupRegisteredToolCount} tools / ${stats.startupRegisteredToolSchemaChars} schema chars`,
       `Current registered: ${stats.registeredToolCount} tools / ${stats.registeredToolSchemaChars} schema chars`,
@@ -134,7 +163,6 @@ export default function capabilityRouter(pi: ExtensionAPI) {
       `Memory: ${memory.list().length} retrieval tools / ${retrievedMemoryCount} retrievals / ${retrievedMemoryChars} result chars`,
       `Context: ${context.list().length} indexed / ${context.loaded.size} loaded / ${context.loadedChars} loaded chars`,
       ...(configWarning ? [`Config warning: ${configWarning}`] : []),
-      ...(conflictWarning ? [`Conflict warning: ${conflictWarning}`] : []),
     ].join("\n");
   }
 
@@ -152,7 +180,7 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     description: DESCRIPTION,
     promptSnippet: PROMPT_SNIPPET,
     parameters: Type.Object({
-      action: Type.Union([Type.Literal("search"), Type.Literal("load"), Type.Literal("status")]),
+      action: Type.Union([Type.Literal("search"), Type.Literal("load"), Type.Literal("unload"), Type.Literal("status")]),
       query: Type.Optional(Type.String({ description: "Task or capability to search for; optional context load focus" })),
       names: Type.Optional(Type.Array(Type.String(), { description: "Exact capability IDs from search, or unambiguous names" })),
       types: Type.Optional(Type.Array(Type.Union([
@@ -177,7 +205,28 @@ export default function capabilityRouter(pi: ExtensionAPI) {
         return { content: [{ type: "text", text: resultText }], details: undefined };
       }
       const names = params.names ?? [];
-      if (!names.length) return { content: [{ type: "text", text: "Provide exact capability IDs from search for load." }] };
+      if (!names.length) return { content: [{ type: "text", text: `Provide exact capability IDs from search for ${params.action}.` }], details: undefined };
+      if (params.action === "unload") {
+        const unloaded: string[] = [];
+        const notActive: string[] = [];
+        const notTools: string[] = [];
+        for (const name of [...new Set(names)]) {
+          const item = resolve(name, params.types);
+          if (item?.type === "skill" || item?.type === "context") { notTools.push(item.id); continue; }
+          const toolName = item?.name ?? name;
+          if (session.active.delete(toolName)) {
+            routerRevoked.add(toolName);
+            unloaded.push(toolName);
+          } else notActive.push(toolName);
+        }
+        if (unloaded.length) applyActiveTools();
+        const outputs = [
+          ...(unloaded.length ? [`Deactivated tools: ${unloaded.join(", ")}. They disappear from the active set on the next model request.`] : []),
+          ...(notActive.length ? [`Not active: ${notActive.join(", ")}`] : []),
+          ...(notTools.length ? [`Not tools (cannot be unloaded): ${notTools.join(", ")}`] : []),
+        ];
+        return { content: [{ type: "text", text: outputs.join("\n\n") || "Nothing changed." }], details: undefined };
+      }
       const loadedTools: string[] = [];
       const outputs: string[] = [];
       const unknown: string[] = [];
@@ -189,6 +238,7 @@ export default function capabilityRouter(pi: ExtensionAPI) {
         else loadedTools.push(item.name);
       }
       const toolResult = session.load(loadedTools, registry.list());
+      for (const name of toolResult.enabled) routerRevoked.delete(name);
       if (toolResult.enabled.length) {
         applyActiveTools();
         pi.sendMessage({
@@ -224,7 +274,10 @@ export default function capabilityRouter(pi: ExtensionAPI) {
 
   pi.on("session_start", (_event, ctx) => {
     configWarning = "";
-    config = readConfig(getAgentDir(), (message) => { configWarning = message; });
+    config = readConfig(getAgentDir(), (message) => {
+      // readConfig can report several invalid values; keep all of them.
+      configWarning = configWarning ? `${configWarning}\n${message}` : message;
+    });
     cwd = ctx.cwd || process.cwd();
     skills.reset();
     context.reset();
@@ -234,15 +287,12 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     retrievedMemoryChars = 0;
     retrievedMemoryCount = 0;
     refreshTools();
-    conflictWarning = pi.getAllTools().some((tool) => tool.name === "tool_search")
-      ? "pi-tool-search also registered tool_search; both extensions control active tools. Disable one of them."
-      : "";
     externalActive.clear();
+    routerRevoked.clear();
     session.reset(config.bootstrapTools, registry.list(), routerSchemaChars());
     // Startup gating deliberately ignores the host's initially eager tool set.
     applyActiveTools(ctx, false);
     ctx.ui.setStatus("capability-router-config", configWarning || undefined);
-    ctx.ui.setStatus("capability-router-conflict", conflictWarning || undefined);
   });
 
   pi.on("before_agent_start", (event) => {
@@ -257,7 +307,8 @@ export default function capabilityRouter(pi: ExtensionAPI) {
   pi.on("turn_start", (_event, ctx) => applyActiveTools(ctx));
 
   pi.on("tool_call", (event) => {
-    if (!config.memory.enabled || event.toolName !== "memory_search") return;
+    if (!config.memory.enabled) return;
+    if (event.toolName !== "memory_search" && event.toolName !== "session_search") return;
     const input = event.input as Record<string, unknown>;
     const requested = typeof input.limit === "number" && Number.isFinite(input.limit) ? input.limit : config.memory.maxResults;
     input.limit = Math.max(1, Math.min(Math.trunc(requested), config.memory.maxResults));
@@ -277,6 +328,9 @@ export default function capabilityRouter(pi: ExtensionAPI) {
     const content = [{ type: "text" as const, text: `${opening}${bounded}${closing}` }, ...event.content.filter((block) => block.type !== "text")];
     retrievedMemoryCount++;
     retrievedMemoryChars += content.reduce((sum, block) => sum + (block.type === "text" ? block.text.length : 0), 0);
-    return { content };
+    // Only the model-facing text is bounded; the structured fields are not part
+    // of the context budget, so dropping them (the old `return { content }`)
+    // silently broke downstream consumers.
+    return { content, details: event.details, structuredContent: event.structuredContent, isError: event.isError, usage: event.usage };
   });
 }
