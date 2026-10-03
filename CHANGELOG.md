@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased (pi-capability-router) — 2026-10-04 round-2 follow-up
+
+- `npm run test:models` without arguments now defaults to the offline `--list` mode instead of exiting with a usage error; any explicit option still requires an explicit `--list`/`--live` mode (round-2 N-7).
+
 ## Unreleased (pi-capability-router) — 2026-10-04 test-report batch
 
 Fixes and behaviors from the 2026-10-04 cross-component test report:

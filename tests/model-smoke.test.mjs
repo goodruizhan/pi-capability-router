@@ -13,13 +13,17 @@ function events(name, args, result, text = "") {
     { type: "message_end", message: { role: "assistant", provider: model.provider, model: model.model, content: [{ type: "text", text }], stopReason: "stop", usage: { input: 3 } } },
   ];
 }
-test("explicit CLI mode and provider/model ID are required", () => {
+test("explicit live opt-in is required; a bare run defaults to offline list", () => {
   assert.deepEqual(parseOptions(["--live", "--model", "p/id/with/slashes"]).models, [{ provider: "p", id: "id/with/slashes" }]);
   assert.throws(() => parseOptions(["--live"]));
   assert.throws(() => parseOptions(["--model", "p/id"]));
   assert.throws(() => parseOptions(["--list", "--provider-extension", "/tmp/x"]));
   assert.throws(() => parseOptions(["--live", "--model", "wrong"]));
   assert.throws(() => parseOptions(["--live", "--model", "p/id", "--timeout-ms", "0"]));
+  // A bare run is useful instead of a usage error: offline list mode.
+  assert.equal(parseOptions([]).list, true);
+  assert.equal(parseOptions([]).live, false);
+  assert.throws(() => parseOptions(["--list", "--live"]));
 });
 test("search, separate load, exact validated echo and nonce consumption", () => {
   assert.equal(inspectStage({ ...model, name: "search" }, events("search", { types: ["tool"], query: ECHO, action: "search" }, `1. tool:${ECHO} [tool]`), nonce).ok, true);

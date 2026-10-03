@@ -23,8 +23,16 @@ export function parseOptions(args) {
     else if (arg === "--live") options.live = true;
     else throw new Error(`Unknown option: ${arg}`);
   }
-  if (options.list === options.live || (options.live && !options.models.length) || (options.list && options.providers.length))
+  // A bare run defaults to the offline `--list` mode instead of a usage
+  // error: the live probe must stay explicit, but plain `npm run test:models`
+  // should still be useful. Any explicit option still requires an explicit mode.
+  if (args.length === 0 && !options.list && !options.live) options.list = true;
+  if (options.list === options.live)
     throw new Error("Use --list (no provider extensions) OR --live --model provider/id [--model ...]");
+  if (options.live && !options.models.length)
+    throw new Error("--live requires --model provider/id [--model ...]");
+  if (options.list && options.providers.length)
+    throw new Error("--list accepts no provider extensions");
   return options;
 }
 
